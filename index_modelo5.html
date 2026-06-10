@@ -325,7 +325,7 @@ button{cursor:pointer;border:none;font-family:inherit}
 .mod-header-link:hover{gap:8px}
 
 /* News layout */
-.news-layout{display:grid;grid-template-columns:1fr 380px;gap:3px;background:var(--g3);border-radius:12px;overflow:hidden}
+.news-layout{display:none}
 
 /* Card principal */
 .news-main{
@@ -903,8 +903,7 @@ input:checked+.tsl::before{transform:translateX(21px)}
 
 /* ── RESPONSIVE ─────────────────────────── */
 @media(max-width:1100px){
-  .news-layout{grid-template-columns:1fr}
-  .news-sidebar{display:grid;grid-template-columns:1fr 1fr;background:none;gap:3px}
+  .news-layout{display:none}
   .faf-layout{grid-template-columns:1fr}
   .footer-grid{grid-template-columns:1fr 1fr}
   .adm-sg{grid-template-columns:1fr 1fr}
@@ -915,7 +914,7 @@ input:checked+.tsl::before{transform:translateX(21px)}
   .hamburger{display:flex;align-items:center}
   .pl-prog-block,.pl-vol,.pl-freq-badge{display:none}
   .footer-grid{grid-template-columns:1fr}
-  .news-sidebar{grid-template-columns:1fr}
+
   .top-layout{grid-template-columns:1fr}
   .prog-grid{grid-template-columns:1fr 1fr}
   .adm-sb{position:fixed;left:-240px;transition:var(--tr);z-index:9999;height:100%;overflow-y:auto}
@@ -1051,8 +1050,8 @@ input:checked+.tsl::before{transform:translateX(21px)}
       <div class="mod-header-line"></div>
       <a href="#" class="mod-header-link">Ver todas <i class="fas fa-arrow-right"></i></a>
     </div>
-    <div class="news-layout" id="newsLayout"></div>
-    <div class="news-grid" id="newsGrid" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:14px;"></div>
+    <div id="newsLayout" style="display:none"></div>
+    <div id="newsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;"></div>
   </div>
 </section>
 
@@ -1723,21 +1722,23 @@ function loadClima(){
 // ═══ NOTICIAS ═══
 function rNews(){
   const news=(S.get('news')||[]).filter(n=>n.status==='published');
-  const el=document.getElementById('newsLayout');
   const gridEl=document.getElementById('newsGrid');
-  el.innerHTML='';
-  if(!news.length){gridEl.innerHTML='<div style="padding:40px;color:var(--t3);text-align:center;grid-column:1/-1">Nenhuma notícia publicada.</div>';return;}
-  gridEl.style.gridTemplateColumns='repeat(auto-fill,minmax(268px,1fr))';
+  if(!news.length){
+    gridEl.innerHTML='<div style="padding:40px;color:var(--t3);text-align:center;grid-column:1/-1"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';
+    return;
+  }
   gridEl.innerHTML=news.map(n=>`
     <div class="ngcard" onclick="oNM(${n.id})">
       <div class="ngcard-img">
-        ${n.img?`<img src="${n.img}" alt="${n.title}" onerror="this.style.display='none'">`:
-        `<div style="height:170px;display:flex;align-items:center;justify-content:center;font-size:48px;color:var(--t4)"><i class="fas fa-newspaper"></i></div>`}
+        ${n.img
+          ? `<img src="${n.img}" alt="${n.title}" loading="lazy" onerror="this.parentElement.style.background='var(--g4)';">`
+          : `<div style="height:170px;display:flex;align-items:center;justify-content:center;font-size:48px;color:var(--t4)"><i class="fas fa-newspaper"></i></div>`
+        }
         <div class="ngcard-cat">${n.cat}</div>
       </div>
       <div class="ngcard-body">
         <div class="ngcard-title">${n.title}</div>
-        <div style="font-size:12px;color:var(--t3);margin-bottom:8px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${n.exc||''}</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:10px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${n.exc||''}</div>
         <div class="ngcard-meta">
           <span><i class="fas fa-user"></i>${n.author}</span>
           <span><i class="fas fa-clock"></i>${fd(n.date)}</span>
