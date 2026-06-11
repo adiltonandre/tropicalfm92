@@ -1926,10 +1926,21 @@ function refreshDashboard() {
 }
 
 // ─── SAVE / RESET SECTIONS ─────────────────────────
+// Helper: salva no localStorage E na API se conectado
+async function apiSave(localKey, localData, apiMethod, apiPath, apiData) {
+  S.set(localKey, localData); // sempre salva local
+  if (API_BASE && API_TOKEN) {
+    try {
+      const res = await Api[apiMethod](apiPath, apiData || localData);
+      if (!res.success) console.warn('API save warning:', res.message);
+    } catch (e) { console.warn('API save error (dados mantidos localmente):', e.message); }
+  }
+}
+
 async function saveSection(sec) {
   const btnId = 'btn-save-' + sec;
   btnLoad(btnId, true);
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 400));
   try {
     if (sec === 'empresa') {
       const d = {
@@ -1939,36 +1950,38 @@ async function saveSection(sec) {
         slogan: document.getElementById('e-slogan').value,
         freq: document.getElementById('e-freq').value,
         tipo: document.getElementById('e-tipo').value,
-        ano: document.getElementById('e-ano').value,
+        ano_fund: document.getElementById('e-ano').value,
         cep: document.getElementById('e-cep').value,
         rua: document.getElementById('e-rua').value,
-        num: document.getElementById('e-num').value,
+        numero: document.getElementById('e-num').value,
         bairro: document.getElementById('e-bairro').value,
         cidade: document.getElementById('e-cidade').value,
         estado: document.getElementById('e-estado').value,
-        comp: document.getElementById('e-comp').value,
+        complemento: document.getElementById('e-comp').value,
       };
       if (!d.nome) { toast('error','Campo obrigatório','Preencha o Nome Fantasia.'); btnLoad(btnId,false); return; }
-      S.set('empresa', d);
+      await apiSave('empresa', d, 'put', '/empresa', d);
       document.getElementById('sbRadioName').textContent = d.nome || 'Tropical FM';
       document.getElementById('sbFreq').textContent = (d.freq || '') + ' — Ao Vivo';
-      toast('success','Empresa salva!','Dados institucionais atualizados com sucesso.');
+      toast('success','Empresa salva!', API_TOKEN ? '✅ Salvo no banco' : '💾 Salvo localmente');
     }
     if (sec === 'contatos') {
+      const redes = getRedes();
       const d = {
-        tel: document.getElementById('c-tel').value,
-        wa: document.getElementById('c-wa').value,
-        waLink: document.getElementById('c-wa-link').value,
+        telefone: document.getElementById('c-tel').value,
+        whatsapp: document.getElementById('c-wa').value,
+        wa_link: document.getElementById('c-wa-link').value,
         email: document.getElementById('c-email').value,
         email2: document.getElementById('c-email2').value,
-        redes: getRedes(),
+        redes,
       };
-      S.set('contatos', d);
-      toast('success','Contatos salvos!','Informações de contato atualizadas.');
+      await apiSave('contatos', d, 'put', '/empresa', d);
+      toast('success','Contatos salvos!', API_TOKEN ? '✅ Salvo no banco' : '💾 Salvo localmente');
     }
     if (sec === 'player') {
       const d = {
         stream: document.getElementById('pl-url').value,
+        stream_url: document.getElementById('pl-url').value,
         vol: document.getElementById('pl-vol').value,
         auto: document.getElementById('pl-auto').checked,
         prog: document.getElementById('pl-prog').value,
@@ -1977,8 +1990,8 @@ async function saveSection(sec) {
         artist: document.getElementById('pl-artist').value,
       };
       if (!d.stream) { toast('error','URL obrigatória','Configure a URL do stream.'); btnLoad(btnId,false); return; }
-      S.set('player', d);
-      toast('success','Player salvo!','Configurações do stream atualizadas.');
+      await apiSave('player', d, 'put', '/empresa', { stream_url: d.stream });
+      toast('success','Player salvo!', API_TOKEN ? '✅ Salvo no banco' : '💾 Salvo localmente');
     }
     clearUnsaved();
     refreshDashboard();
@@ -2051,24 +2064,38 @@ function setRedes(d) {
 }
 
 // ─── CAROUSEL ────────────────────────────────────────
-function addSlide() {
+async function addSlide() {
   const title = document.getElementById('sl-title').value.trim();
   if (!title) { toast('error','Campo obrigatório','Preencha o título do slide.'); return; }
-  const slides = S.get('slides') || [];
-  slides.push({
-    id: Date.now(), title,
-    sub: document.getElementById('sl-sub').value,
-    img: document.getElementById('sl-img').value,
+  const slide = {
+    titulo: title,
+    subtitulo: document.getElementById('sl-sub').value,
+    imagem_url: document.getElementById('sl-img').value,
     tag: document.getElementById('sl-tag').value || 'Destaque',
-    btn: document.getElementById('sl-btn').value,
-    link: document.getElementById('sl-link').value,
-    active: document.getElementById('sl-active').checked,
-  });
+    btn_texto: document.getElementById('sl-btn').value,
+    btn_link: document.getElementById('sl-link').value,
+    ativo: document.getElementById('sl-active').checked ? 1 : 0,
+    // compatibilidade localStorage
+    title, sub: document.getElementById('sl-sub').value,
+    img: document.getElementById('sl-img').value, btn: document.getElementById('sl-btn').value,
+    link: document.getElementById('sl-link').value, active: document.getElementById('sl-active').checked,
+  };
+  // Local
+  const slides = S.get('slides') || [];
+  slide.id = Date.now();
+  slides.push(slide);
   S.set('slides', slides);
+  // API
+  if (API_BASE && API_TOKEN) {
+    const res = await Api.post('/slides', slide);
+    if (res.success) toast('success','Slide adicionado!','✅ Salvo no banco');
+    else toast('success','Slide adicionado!','💾 Salvo localmente');
+  } else {
+    toast('success','Slide adicionado!','💾 Salvo localmente');
+  }
   renderSlides();
   ['sl-title','sl-sub','sl-img','sl-tag','sl-btn','sl-link'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('sl-active').checked = true;
-  toast('success','Slide adicionado!','O novo slide foi salvo.');
 }
 function renderSlides() {
   const slides = S.get('slides') || [];
@@ -2108,25 +2135,30 @@ function initQuill() {
     modules: { toolbar: [['bold','italic','underline'],[{'list':'ordered'},{'list':'bullet'}],['link','image'],['clean']] }
   });
 }
-function saveNews(status) {
+async function saveNews(status) {
   const title = document.getElementById('n-titulo').value.trim();
   if (!title) { validateRequired(document.getElementById('n-titulo')); toast('error','Título obrigatório','Preencha o título da notícia.'); return; }
-  const news = S.get('news') || [];
-  news.unshift({
-    id: Date.now(), status, title,
+  const d = {
+    titulo: title, title, status,
+    categoria: document.getElementById('n-cat').value,
     cat: document.getElementById('n-cat').value,
     resumo: document.getElementById('n-resumo').value,
+    conteudo: quillEditor ? quillEditor.root.innerHTML : '',
     content: quillEditor ? quillEditor.root.innerHTML : '',
+    imagem_url: document.getElementById('n-img').value,
     img: document.getElementById('n-img').value,
     autor: document.getElementById('n-autor').value || 'Redação',
     date: new Date().toISOString(),
-  });
-  S.set('news', news);
+    id: Date.now(),
+  };
+  const news = S.get('news') || []; news.unshift(d); S.set('news', news);
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/noticias', d); toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','✅ Salvo no banco'); }
+    catch(e) { toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente'); }
+  } else { toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente'); }
   ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
   if (quillEditor) quillEditor.setContents([]);
-  renderNewsList();
-  toast('success', status === 'published' ? 'Notícia publicada!' : 'Rascunho salvo!', title.slice(0, 50));
-  clearUnsaved();
+  renderNewsList(); dSt(); clearUnsaved();
 }
 function renderNewsList(filter = '') {
   const news = (S.get('news') || []).filter(n => !filter || n.title.toLowerCase().includes(filter.toLowerCase()));
@@ -2167,19 +2199,28 @@ function swTab(panel, tab, btn) {
 }
 
 // ─── PROGRAMAÇÃO ──────────────────────────────────────
-function addProg() {
+async function addProg() {
   const nome = document.getElementById('pr-nome').value.trim();
   if (!nome) { validateRequired(document.getElementById('pr-nome')); toast('error','Campo obrigatório','Preencha o nome do programa.'); return; }
-  const progs = S.get('progs') || [];
-  progs.push({
-    id: Date.now(), nome, host: document.getElementById('pr-host').value,
-    inicio: document.getElementById('pr-inicio').value, fim: document.getElementById('pr-fim').value,
-    dias: document.getElementById('pr-dias').value, foto: document.getElementById('pr-foto').value,
+  const d = {
+    id: Date.now(), nome, nome_programa: nome,
+    host: document.getElementById('pr-host').value,
+    horario_ini: document.getElementById('pr-inicio').value,
+    horario_fim: document.getElementById('pr-fim').value,
+    inicio: document.getElementById('pr-inicio').value,
+    fim: document.getElementById('pr-fim').value,
+    dias: document.getElementById('pr-dias').value,
+    foto_url: document.getElementById('pr-foto').value,
+    foto: document.getElementById('pr-foto').value,
+    descricao: document.getElementById('pr-desc').value,
     desc: document.getElementById('pr-desc').value,
-  });
-  S.set('progs', progs); renderProgs();
+  };
+  const progs = S.get('progs') || []; progs.push(d); S.set('progs', progs); renderProgs();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/programas', d); toast('success','Programa adicionado!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Programa adicionado!','💾 Salvo localmente'); }
+  } else { toast('success','Programa adicionado!','💾 Salvo localmente'); }
   ['pr-nome','pr-host','pr-inicio','pr-fim','pr-dias','pr-foto','pr-desc'].forEach(id => document.getElementById(id).value = '');
-  toast('success','Programa adicionado!', nome);
 }
 function renderProgs() {
   const progs = S.get('progs') || [];
@@ -2208,27 +2249,38 @@ function updateLiveStatus() {
   badge.className = 'live-status ' + (on ? 'on' : 'off');
   txt.textContent = on ? 'AO VIVO' : 'Offline';
 }
-function saveLive() {
+async function saveLive() {
   const d = {
     active: document.getElementById('lv-ativo').checked,
+    live_ativo: document.getElementById('lv-ativo').checked ? 1 : 0,
     url: document.getElementById('lv-url').value,
+    live_url: document.getElementById('lv-url').value,
     canal: document.getElementById('yt-canal').value,
+    canal_url: document.getElementById('yt-canal').value,
     ytId: document.getElementById('yt-id').value,
+    channel_id: document.getElementById('yt-id').value,
     titulo: document.getElementById('lv-titulo').value,
+    live_titulo: document.getElementById('lv-titulo').value,
     desc: document.getElementById('lv-desc').value,
+    live_desc: document.getElementById('lv-desc').value,
   };
   S.set('live', d); clearUnsaved();
-  toast('success','Live salva!', d.active ? 'Transmissão marcada como AO VIVO.' : 'Live configurada como offline.');
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/podcast/live', d); toast('success','Live salva!', d.active ? '✅ AO VIVO ativo no banco' : '✅ Offline salvo no banco'); }
+    catch(e) { toast('success','Live salva!','💾 Salvo localmente'); }
+  } else { toast('success','Live salva!', d.active ? '💾 AO VIVO (local)' : '💾 Offline (local)'); }
 }
-function addEp() {
+async function addEp() {
   const titulo = document.getElementById('ep-titulo').value.trim();
   const ytid = document.getElementById('ep-ytid').value.trim();
   if (!titulo || !ytid) { toast('error','Campos obrigatórios','Preencha título e ID do vídeo.'); return; }
-  const eps = S.get('manualEps') || [];
-  eps.unshift({ id: Date.now(), titulo, ytid, data: document.getElementById('ep-data').value });
-  S.set('manualEps', eps); renderEps();
+  const d = { id: Date.now(), titulo, youtube_id: ytid, ytid, data_ep: document.getElementById('ep-data').value, data: document.getElementById('ep-data').value };
+  const eps = S.get('manualEps') || []; eps.unshift(d); S.set('manualEps', eps); renderEps();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/podcast', d); toast('success','Episódio adicionado!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Episódio adicionado!','💾 Salvo localmente'); }
+  } else { toast('success','Episódio adicionado!','💾 Salvo localmente'); }
   ['ep-titulo','ep-ytid','ep-data'].forEach(id => document.getElementById(id).value = '');
-  toast('success','Episódio adicionado!', titulo);
 }
 function renderEps() {
   const eps = S.get('manualEps') || [];
@@ -2248,16 +2300,23 @@ function delEp(id) {
 }
 
 // ─── TOP ──────────────────────────────────────────────
-function addTop() {
+async function addTop() {
   const song = document.getElementById('tp-song').value.trim();
   const artist = document.getElementById('tp-artist').value.trim();
   if (!song || !artist) { toast('error','Campos obrigatórios','Preencha música e artista.'); return; }
   const top = S.get('top') || [];
   if (top.length >= 10) { toast('warning','Limite atingido','O Top 10 já tem 10 músicas. Remova uma antes de adicionar.'); return; }
-  top.push({ id: Date.now(), song, artist, trend: document.getElementById('tp-trend').value, cover: document.getElementById('tp-cover').value });
-  S.set('top', top); renderTop();
+  const d = { id: Date.now(), song, musica: song, artist, artista: artist,
+    trend: document.getElementById('tp-trend').value,
+    tendencia: document.getElementById('tp-trend').value,
+    cover: document.getElementById('tp-cover').value,
+    capa_url: document.getElementById('tp-cover').value };
+  top.push(d); S.set('top', top); renderTop();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/top', d); toast('success','Música adicionada!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Música adicionada!','💾 Salvo localmente'); }
+  } else { toast('success','Música adicionada!', `${song} — ${artist} 💾`); }
   ['tp-song','tp-artist','tp-cover'].forEach(id => document.getElementById(id).value = '');
-  toast('success','Música adicionada!', `${song} — ${artist}`);
 }
 function renderTop() {
   const top = S.get('top') || [];
@@ -2279,16 +2338,18 @@ function delTop(id) {
 }
 
 // ─── ENQUETE ─────────────────────────────────────────
-function saveEnq() {
+async function saveEnq() {
   const q = document.getElementById('enq-q').value.trim();
   if (!q) { validateRequired(document.getElementById('enq-q')); toast('error','Campo obrigatório','Preencha a pergunta.'); return; }
   const opts = ['enq-o1','enq-o2','enq-o3','enq-o4'].map(id => document.getElementById(id).value.trim()).filter(Boolean);
   if (opts.length < 2) { toast('error','Mínimo 2 opções','Preencha ao menos 2 opções.'); return; }
-  S.set('enquete', { q, opts, votes: new Array(opts.length).fill(0) });
-  S.del('enq_v');
-  renderEnqStats();
-  toast('success','Enquete salva!','Votos foram resetados automaticamente.');
-  clearUnsaved();
+  const d = { q, pergunta: q, opts, opcoes: opts, votes: new Array(opts.length).fill(0) };
+  S.set('enquete', d); S.del('enq_v');
+  if (API_BASE && API_TOKEN) {
+    try { await Api.post('/enquete', d); toast('success','Enquete salva!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Enquete salva!','💾 Salvo localmente'); }
+  } else { toast('success','Enquete salva!','💾 Salvo localmente'); }
+  renderEnqStats(); clearUnsaved();
 }
 function resetEnq() {
   const e = S.get('enquete');
@@ -2311,13 +2372,28 @@ function renderEnqStats() {
 }
 
 // ─── PUBLICIDADE ──────────────────────────────────────
-function savePub(tipo) {
+async function savePub(tipo) {
   if (tipo === 'principal') {
-    S.set('pub', { active: document.getElementById('pub-ativo').checked, img: document.getElementById('pub-img').value, link: document.getElementById('pub-link').value, texto: document.getElementById('pub-texto').value });
-    toast('success','Banner principal salvo!','');
+    const d = { active: document.getElementById('pub-ativo').checked, ativo: document.getElementById('pub-ativo').checked?1:0,
+      img: document.getElementById('pub-img').value, imagem_url: document.getElementById('pub-img').value,
+      link: document.getElementById('pub-link').value, link_url: document.getElementById('pub-link').value,
+      texto: document.getElementById('pub-texto').value, tipo: 'principal' };
+    S.set('pub', d);
+    if (API_BASE && API_TOKEN) {
+      try { await Api.put('/publicidade/principal', d); toast('success','Banner salvo!','✅ Salvo no banco'); }
+      catch(e) { toast('success','Banner salvo!','💾 Salvo localmente'); }
+    } else { toast('success','Banner principal salvo!','💾 Salvo localmente'); }
   } else {
-    S.set('pubFlutuante', { active: document.getElementById('pubf-ativo').checked, img: document.getElementById('pubf-img').value, link: document.getElementById('pubf-link').value, texto: document.getElementById('pubf-texto').value, delay: parseInt(document.getElementById('pubf-delay').value)||8 });
-    toast('success','Banner flutuante salvo!','');
+    const d = { active: document.getElementById('pubf-ativo').checked, ativo: document.getElementById('pubf-ativo').checked?1:0,
+      img: document.getElementById('pubf-img').value, imagem_url: document.getElementById('pubf-img').value,
+      link: document.getElementById('pubf-link').value, link_url: document.getElementById('pubf-link').value,
+      texto: document.getElementById('pubf-texto').value, delay: parseInt(document.getElementById('pubf-delay').value)||8,
+      delay_s: parseInt(document.getElementById('pubf-delay').value)||8, tipo: 'flutuante' };
+    S.set('pubFlutuante', d);
+    if (API_BASE && API_TOKEN) {
+      try { await Api.put('/publicidade/flutuante', d); toast('success','Banner flutuante salvo!','✅ Salvo no banco'); }
+      catch(e) { toast('success','Banner flutuante salvo!','💾 Salvo localmente'); }
+    } else { toast('success','Banner flutuante salvo!','💾 Salvo localmente'); }
   }
   clearUnsaved();
 }
