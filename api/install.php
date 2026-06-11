@@ -13,8 +13,8 @@ define('INSTALL_KEY', 'tropical2025');
 session_start();
 
 // ── Segurança básica ────────────────────────────────
-if ($_GET['key'] ?? '' !== INSTALL_KEY) {
-    if ($_POST['key'] ?? '' !== INSTALL_KEY) {
+if (($_GET['key'] ?? '') !== INSTALL_KEY) {
+    if (($_POST['key'] ?? '') !== INSTALL_KEY) {
         http_response_code(403);
         die(renderPage('Acesso Negado', '<div class="alert alert-danger">❌ Chave de instalação incorreta.</div>'));
     }

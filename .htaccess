@@ -1,0 +1,8 @@
+# Ativa mod_rewrite para todo o projeto
+Options -Indexes
+RewriteEngine On
+
+# Bloqueia acesso direto a arquivos sensíveis na raiz
+<FilesMatch "\.(sql|env|log|md)$">
+    Require all denied
+</FilesMatch>

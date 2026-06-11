@@ -1,24 +1,16 @@
 RewriteEngine On
 
-# Redireciona tudo para index.php (exceto arquivos reais)
+# Redireciona tudo para index.php (exceto arquivos físicos existentes)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php [QSA,L]
 
-# Segurança: bloqueia acesso direto a arquivos sensíveis
-<FilesMatch "\.(php|sql|json|env|log)$">
-    <RequireAll>
-        Require all denied
-        Require local
-    </RequireAll>
+# Bloqueia acesso direto a arquivos sensíveis (NÃO ao index.php e install.php)
+<FilesMatch "^(?!index\.php|install\.php).+\.(php|sql|env|log)$">
+    Require all denied
 </FilesMatch>
-
-# Permite acesso apenas ao index.php
-<Files "index.php">
-    Require all granted
-</Files>
 
 # Headers de segurança
 Header always set X-Content-Type-Options "nosniff"
-Header always set X-Frame-Options "DENY"
+Header always set X-Frame-Options "SAMEORIGIN"
 Header always set X-XSS-Protection "1; mode=block"

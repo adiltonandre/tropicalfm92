@@ -43,9 +43,11 @@ set_exception_handler(function (Throwable $e) {
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
 
 // Rota: /api/...
-$uri    = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$uri    = preg_replace('#^/api#', '', $uri);
-$uri    = trim($uri, '/');
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+// Remove qualquer prefixo de subpasta antes de /api
+// Funciona em localhost/tropicalfm/api/ e em seusite.com/api/
+$uri = preg_replace('#^.*?/api#', '', $uri);
+$uri = trim($uri, '/');
 $method = $_SERVER['REQUEST_METHOD'];
 $parts  = explode('/', $uri);
 $resource = $parts[0] ?? '';
