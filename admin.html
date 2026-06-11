@@ -1436,8 +1436,14 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
 // Altere API_BASE para a URL da sua hospedagem quando contratar
 // Exemplo: 'https://tropicalfm.com.br/api'
 // Enquanto for '' ou null → usa localStorage (modo offline)
-const API_BASE = localStorage.getItem('__api_base') || '';
-let API_TOKEN  = localStorage.getItem('__api_token') || '';
+let API_BASE = localStorage.getItem('__api_base') || '';
+let API_TOKEN = localStorage.getItem('__api_token') || '';
+
+// Corrige https → http para localhost automaticamente
+if (API_BASE.startsWith('https://localhost')) {
+  API_BASE = API_BASE.replace('https://localhost', 'http://localhost');
+  localStorage.setItem('__api_base', API_BASE);
+}
 
 // ─── API CLIENT ─────────────────────────────────────
 const Api = {
@@ -1447,9 +1453,19 @@ const Api = {
     if (!API_BASE) return (this._online = false);
     if (this._online !== null) return this._online;
     try {
-      const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 4000);
+      const r = await fetch(`${API_BASE}/health`, {
+        signal: ctrl.signal,
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      clearTimeout(t);
       this._online = r.ok;
-    } catch { this._online = false; }
+    } catch (e) {
+      console.warn('API check failed:', e.message);
+      this._online = false;
+    }
     return this._online;
   },
 
@@ -2548,16 +2564,20 @@ async function updateApiStatus() {
 }
 
 async function testApiConnection() {
-  btnLoad('btn-api-login', true);
-  // reset online check
+  // Relê do localStorage para garantir valor atualizado
+  API_BASE = localStorage.getItem('__api_base') || '';
+  if (API_BASE.startsWith('https://localhost')) {
+    API_BASE = API_BASE.replace('https://localhost', 'http://localhost');
+    localStorage.setItem('__api_base', API_BASE);
+  }
+  API_TOKEN = localStorage.getItem('__api_token') || '';
   Api._online = null;
   await updateApiStatus();
-  btnLoad('btn-api-login', false);
   const online = await Api.check();
   if (online) {
     toast('success', 'Conexão OK!', `API em ${API_BASE} respondendo.`);
   } else {
-    toast('error', 'Sem conexão', 'Verifique a URL e se a hospedagem está ativa.');
+    toast('error', 'Sem conexão', `Tentei: ${API_BASE}/health — verifique se o XAMPP está rodando.`);
   }
 }
 
@@ -2570,6 +2590,7 @@ function saveApiConfig() {
   base = base.replace(/\/$/, ''); // remove trailing slash
 
   localStorage.setItem('__api_base', base);
+  API_BASE = base;  // atualiza variável global imediatamente
   Api._online = null;
   document.getElementById('apiModeLabel').textContent = base ? `Online — ${base}` : 'Offline (localStorage)';
   clearUnsaved();
