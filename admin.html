@@ -2495,9 +2495,13 @@ function fmtDate(d) {
 
 // ─── API PANEL ─────────────────────────────────────
 function initApiPanel() {
-  const base = localStorage.getItem('__api_base') || '';
-  // preenche input sem o https://
-  document.getElementById('api-base-input').value = base.replace(/^https?:\/\//,'');
+  let base = localStorage.getItem('__api_base') || '';
+  // Corrige https → http se for localhost
+  if (base && base.startsWith('https://localhost')) {
+    base = base.replace('https://localhost', 'http://localhost');
+    localStorage.setItem('__api_base', base);
+  }
+  document.getElementById('api-base-input').value = base.replace(/^https?:\/\//, '');
   document.getElementById('apiModeLabel').textContent = base ? `Online — ${base}` : 'Offline (localStorage)';
   updateApiStatus();
   buildInstallChecklist();
@@ -2559,7 +2563,10 @@ async function testApiConnection() {
 
 function saveApiConfig() {
   let base = document.getElementById('api-base-input').value.trim();
-  if (base && !base.startsWith('http')) base = 'https://' + base;
+  if (base && !base.startsWith('http')) {
+    const isLocal = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(base);
+    base = (isLocal ? 'http://' : 'https://') + base;
+  }
   base = base.replace(/\/$/, ''); // remove trailing slash
 
   localStorage.setItem('__api_base', base);
