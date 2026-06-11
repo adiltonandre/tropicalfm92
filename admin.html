@@ -662,6 +662,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
         <div class="sb-group">
           <div class="sb-group-label">Sistema</div>
           <div class="sb-item" onclick="goto('config',this)"><i class="fas fa-cog"></i>Configurações</div>
+          <div class="sb-item" onclick="goto('api',this)"><i class="fas fa-plug"></i>Conexão API <span class="sb-badge" id="apiBadge" style="display:none">!</span></div>
           <div class="sb-item" onclick="goto('backup',this)"><i class="fas fa-database"></i>Backup / Restaurar</div>
           <div class="sb-item" onclick="goto('pin',this)"><i class="fas fa-lock"></i>Segurança (PIN)</div>
         </div>
@@ -1298,6 +1299,79 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
         </div>
       </div>
 
+      <!-- ═══ API / PRODUÇÃO ═══ -->
+      <div class="panel" id="p-api">
+        <div class="panel-title"><i class="fas fa-plug"></i>Conexão com a API</div>
+        <div class="panel-sub">Configure quando tiver o provedor de hospedagem. Enquanto isso, tudo funciona offline com localStorage.</div>
+
+        <!-- Status banner -->
+        <div id="apiStatusBanner" style="margin-bottom:20px;padding:14px 18px;border-radius:var(--r12);display:flex;align-items:center;gap:12px;font-size:13px;font-weight:600">
+          <i id="apiStatusIcon" class="fas fa-circle-notch fa-spin"></i>
+          <span id="apiStatusText">Verificando conexão...</span>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-server"></i>URL da API</div>
+          <div class="fg">
+            <label>Base URL da API <span class="hint">Deixe vazio para usar modo offline (localStorage)</span></label>
+            <div class="fi-group">
+              <span class="fi-prefix">https://</span>
+              <input class="fi" id="api-base-input" type="text" placeholder="seusite.com.br/api"
+                value="" oninput="markUnsaved()">
+            </div>
+            <div class="field-msg info" id="api-url-msg">
+              <i class="fas fa-info-circle"></i>
+              Modo atual: <strong id="apiModeLabel">Offline (localStorage)</strong>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-p" onclick="saveApiConfig()">
+              <span class="label"><i class="fas fa-save"></i>Salvar URL</span>
+              <span class="spin"><i class="fas fa-circle-notch"></i></span>
+            </button>
+            <button class="btn btn-o" onclick="testApiConnection()">
+              <span class="label"><i class="fas fa-wifi"></i>Testar Conexão</span>
+              <span class="spin"><i class="fas fa-circle-notch"></i></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-key"></i>Autenticação</div>
+          <div class="fg">
+            <label>PIN para login na API</label>
+            <div class="fi-group">
+              <span class="fi-prefix"><i class="fas fa-lock"></i></span>
+              <input class="fi" id="api-pin-input" type="password" maxlength="4" placeholder="••••"
+                oninput="this.value=this.value.replace(/\D/g,'')">
+            </div>
+          </div>
+          <button class="btn btn-p" onclick="loginApi()" id="btn-api-login">
+            <span class="label"><i class="fas fa-sign-in-alt"></i>Conectar à API</span>
+            <span class="spin"><i class="fas fa-circle-notch"></i></span>
+          </button>
+          <div class="field-msg" id="api-login-msg" style="margin-top:8px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-sync-alt"></i>Migrar Dados Locais → Banco</div>
+          <p style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:14px">
+            Quando conectar pela primeira vez ao banco, use esta função para migrar todos os dados
+            que você cadastrou offline (notícias, slides, programas, etc.) para o servidor.
+          </p>
+          <div id="syncResult" style="display:none;margin-bottom:14px;padding:12px;border-radius:var(--r8);font-size:13px"></div>
+          <button class="btn btn-g" onclick="syncLocalToApi()" id="btn-sync">
+            <span class="label"><i class="fas fa-cloud-upload-alt"></i>Migrar dados para o banco agora</span>
+            <span class="spin"><i class="fas fa-circle-notch"></i></span>
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><i class="fas fa-list-check"></i>Checklist de Instalação</div>
+          <div id="installChecklist"></div>
+        </div>
+      </div>
+
       <!-- ═══ BACKUP ═══ -->
       <div class="panel" id="p-backup">
         <div class="panel-title"><i class="fas fa-database"></i>Backup / Restaurar</div>
@@ -1358,14 +1432,97 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
 //  Sistema completo com PIN, validações, alertas
 // ═══════════════════════════════════════════════════
 
-// ─── STORAGE ────────────────────────────────────────
+// ─── CONFIG API ─────────────────────────────────────
+// Altere API_BASE para a URL da sua hospedagem quando contratar
+// Exemplo: 'https://tropicalfm.com.br/api'
+// Enquanto for '' ou null → usa localStorage (modo offline)
+const API_BASE = localStorage.getItem('__api_base') || '';
+let API_TOKEN  = localStorage.getItem('__api_token') || '';
+
+// ─── API CLIENT ─────────────────────────────────────
+const Api = {
+  _online: null,
+
+  async check() {
+    if (!API_BASE) return (this._online = false);
+    if (this._online !== null) return this._online;
+    try {
+      const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      this._online = r.ok;
+    } catch { this._online = false; }
+    return this._online;
+  },
+
+  headers() {
+    const h = { 'Content-Type': 'application/json' };
+    if (API_TOKEN) h['Authorization'] = `Bearer ${API_TOKEN}`;
+    return h;
+  },
+
+  async get(path) {
+    const r = await fetch(`${API_BASE}${path}`, { headers: this.headers() });
+    return r.json();
+  },
+
+  async post(path, body) {
+    const r = await fetch(`${API_BASE}${path}`, {
+      method: 'POST', headers: this.headers(), body: JSON.stringify(body)
+    });
+    return r.json();
+  },
+
+  async put(path, body) {
+    const r = await fetch(`${API_BASE}${path}`, {
+      method: 'PUT', headers: this.headers(), body: JSON.stringify(body)
+    });
+    return r.json();
+  },
+
+  async del(path) {
+    const r = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers: this.headers() });
+    return r.json();
+  },
+};
+
+// ─── STORAGE HÍBRIDO ─────────────────────────────────
+// Lê/escreve no banco SE API_BASE configurado + token válido
+// Caso contrário cai automaticamente para localStorage
 let PREFIX = localStorage.getItem('__adm_prefix') || 'tf6_';
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(PREFIX + k)) } catch { return null } },
   set: (k, v) => { localStorage.setItem(PREFIX + k, JSON.stringify(v)); logActivity(`Dados "${k}" atualizados`) },
   del: k => localStorage.removeItem(PREFIX + k),
   getRaw: k => localStorage.getItem(k),
-  setRaw: (k, v) => localStorage.setItem(k, v)
+  setRaw: (k, v) => localStorage.setItem(k, v),
+  // Sincroniza todos os dados locais para a API (pós-instalação)
+  async syncToApi() {
+    if (!API_BASE || !API_TOKEN) return 0;
+    let count = 0;
+    try {
+      // Empresa
+      const emp = S.get('empresa');
+      if (emp) { await Api.put('/empresa', emp); count++; }
+      // Player
+      const pl = S.get('player');
+      if (pl) { await Api.put('/empresa', { stream_url: pl.stream }); count++; }
+      // Slides
+      const slides = S.get('slides') || [];
+      for (const sl of slides) { await Api.post('/slides', sl); count++; }
+      // Notícias
+      const news = S.get('news') || [];
+      for (const n of news) { await Api.post('/noticias', n); count++; }
+      // Programas
+      const progs = S.get('progs') || [];
+      for (const p of progs) { await Api.post('/programas', p); count++; }
+      // Top músicas
+      const top = S.get('top') || [];
+      for (const t of top) { await Api.post('/top', t); count++; }
+      // Enquete
+      const enq = S.get('enquete');
+      if (enq) { await Api.post('/enquete', enq); count++; }
+    } catch (e) { console.error('Sync error:', e); }
+    return count;
+  }
 };
 
 // ─── PIN SYSTEM ─────────────────────────────────────
@@ -2336,6 +2493,184 @@ function fmtDate(d) {
   catch { return d || ''; }
 }
 
+// ─── API PANEL ─────────────────────────────────────
+function initApiPanel() {
+  const base = localStorage.getItem('__api_base') || '';
+  // preenche input sem o https://
+  document.getElementById('api-base-input').value = base.replace(/^https?:\/\//,'');
+  document.getElementById('apiModeLabel').textContent = base ? `Online — ${base}` : 'Offline (localStorage)';
+  updateApiStatus();
+  buildInstallChecklist();
+}
+
+async function updateApiStatus() {
+  const banner = document.getElementById('apiStatusBanner');
+  const icon   = document.getElementById('apiStatusIcon');
+  const txt    = document.getElementById('apiStatusText');
+  const badge  = document.getElementById('apiBadge');
+
+  if (!API_BASE) {
+    banner.style.background = 'rgba(217,119,6,.08)';
+    banner.style.border = '1px solid rgba(217,119,6,.2)';
+    banner.style.color = 'var(--am)';
+    icon.className = 'fas fa-exclamation-circle';
+    txt.textContent = 'Modo offline — dados salvos no navegador (localStorage). Configure a URL da API quando tiver hospedagem.';
+    if (badge) badge.style.display = 'inline';
+    return;
+  }
+
+  icon.className = 'fas fa-circle-notch fa-spin';
+  txt.textContent = 'Verificando conexão com a API...';
+  banner.style.background = 'rgba(37,99,235,.06)';
+  banner.style.border = '1px solid rgba(37,99,235,.15)';
+  banner.style.color = 'var(--bl)';
+
+  const online = await Api.check();
+  if (online) {
+    banner.style.background = 'rgba(13,158,106,.06)';
+    banner.style.border = '1px solid rgba(13,158,106,.2)';
+    banner.style.color = 'var(--g)';
+    icon.className = 'fas fa-check-circle';
+    txt.textContent = `✅ Conectado à API: ${API_BASE} ${API_TOKEN ? '— Autenticado' : '— Não autenticado (faça login)'}`;
+    if (badge) badge.style.display = 'none';
+  } else {
+    banner.style.background = 'rgba(232,35,26,.06)';
+    banner.style.border = '1px solid rgba(232,35,26,.2)';
+    banner.style.color = 'var(--r)';
+    icon.className = 'fas fa-times-circle';
+    txt.textContent = `❌ Sem conexão com ${API_BASE} — verifique a URL ou a hospedagem.`;
+    if (badge) badge.style.display = 'inline';
+  }
+}
+
+async function testApiConnection() {
+  btnLoad('btn-api-login', true);
+  // reset online check
+  Api._online = null;
+  await updateApiStatus();
+  btnLoad('btn-api-login', false);
+  const online = await Api.check();
+  if (online) {
+    toast('success', 'Conexão OK!', `API em ${API_BASE} respondendo.`);
+  } else {
+    toast('error', 'Sem conexão', 'Verifique a URL e se a hospedagem está ativa.');
+  }
+}
+
+function saveApiConfig() {
+  let base = document.getElementById('api-base-input').value.trim();
+  if (base && !base.startsWith('http')) base = 'https://' + base;
+  base = base.replace(/\/$/, ''); // remove trailing slash
+
+  localStorage.setItem('__api_base', base);
+  Api._online = null;
+  document.getElementById('apiModeLabel').textContent = base ? `Online — ${base}` : 'Offline (localStorage)';
+  clearUnsaved();
+  toast('success', 'URL salva!', base ? `API: ${base}` : 'Modo offline ativado.');
+  updateApiStatus();
+  buildInstallChecklist();
+}
+
+async function loginApi() {
+  const pin = document.getElementById('api-pin-input').value;
+  const msg = document.getElementById('api-login-msg');
+  if (!pin || pin.length !== 4) {
+    msg.className = 'field-msg err';
+    msg.innerHTML = '<i class="fas fa-times-circle"></i> Digite o PIN de 4 dígitos.';
+    return;
+  }
+  if (!API_BASE) {
+    msg.className = 'field-msg err';
+    msg.innerHTML = '<i class="fas fa-times-circle"></i> Configure a URL da API primeiro.';
+    return;
+  }
+  btnLoad('btn-api-login', true);
+  try {
+    const res = await Api.post('/auth', { pin });
+    if (res.success && res.data?.token) {
+      API_TOKEN = res.data.token;
+      localStorage.setItem('__api_token', API_TOKEN);
+      msg.className = 'field-msg ok';
+      msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token válido por 24h.';
+      toast('success', 'Login na API realizado!', 'Agora você pode migrar os dados.');
+      updateApiStatus();
+    } else {
+      msg.className = 'field-msg err';
+      msg.innerHTML = `<i class="fas fa-times-circle"></i> ${res.message || 'PIN incorreto.'}`;
+    }
+  } catch (e) {
+    msg.className = 'field-msg err';
+    msg.innerHTML = '<i class="fas fa-times-circle"></i> Erro de conexão. Verifique a URL da API.';
+  }
+  btnLoad('btn-api-login', false);
+}
+
+async function syncLocalToApi() {
+  if (!API_BASE || !API_TOKEN) {
+    toast('warning', 'Configure a API primeiro', 'Salve a URL e faça login antes de sincronizar.');
+    return;
+  }
+  btnLoad('btn-sync', true);
+  const result = document.getElementById('syncResult');
+  result.style.display = 'block';
+  result.style.background = 'rgba(37,99,235,.06)';
+  result.style.border = '1px solid rgba(37,99,235,.15)';
+  result.style.color = 'var(--bl)';
+  result.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Migrando dados...';
+
+  try {
+    const count = await S.syncToApi();
+    result.style.background = 'rgba(13,158,106,.06)';
+    result.style.border = '1px solid rgba(13,158,106,.2)';
+    result.style.color = 'var(--g)';
+    result.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${count} registro(s) migrado(s)</strong> com sucesso para o banco de dados!`;
+    toast('success', 'Sincronização concluída!', `${count} registros enviados ao servidor.`);
+  } catch (e) {
+    result.style.background = 'rgba(232,35,26,.06)';
+    result.style.border = '1px solid rgba(232,35,26,.15)';
+    result.style.color = 'var(--r)';
+    result.innerHTML = '<i class="fas fa-times-circle"></i> Erro durante a migração. Tente novamente.';
+    toast('error', 'Erro na migração', 'Verifique a conexão e o token.');
+  }
+  btnLoad('btn-sync', false);
+}
+
+function buildInstallChecklist() {
+  const base  = localStorage.getItem('__api_base') || '';
+  const token = localStorage.getItem('__api_token') || '';
+  const emp   = S.get('empresa');
+  const news  = (S.get('news') || []).filter(n=>n.status==='published').length;
+
+  const items = [
+    { ok: true,         label: 'Painel admin funcionando', sub: 'admin.html carregado corretamente' },
+    { ok: !!emp?.nome,  label: 'Dados da empresa preenchidos', sub: 'Vá em Empresa / Rádio' },
+    { ok: !!S.get('player')?.stream, label: 'Stream da rádio configurado', sub: 'Vá em Player / Stream' },
+    { ok: news > 0,     label: 'Pelo menos 1 notícia publicada', sub: `${news} publicada(s) atualmente` },
+    { ok: !!base,       label: 'URL da API configurada', sub: base || 'Configure acima após contratar hospedagem' },
+    { ok: !!token,      label: 'Autenticado na API', sub: token ? 'Token JWT ativo' : 'Faça login acima após configurar a URL' },
+    { ok: false,        label: 'schema.sql executado no phpMyAdmin', sub: 'Arquivo em api/schema.sql — execute uma vez após criar o banco', manual: true },
+    { ok: false,        label: 'database.php configurado na hospedagem', sub: 'api/config/database.php — edite com host, user e senha do banco', manual: true },
+    { ok: !!base && !!token, label: 'Dados migrados para o banco', sub: 'Use o botão "Migrar dados" acima após autenticar' },
+  ];
+
+  document.getElementById('installChecklist').innerHTML = items.map((item, i) => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid var(--s1);${i===items.length-1?'border:none':''}">
+      <div style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;
+        background:${item.ok?'rgba(13,158,106,.1)':item.manual?'rgba(217,119,6,.1)':'rgba(232,35,26,.08)'};
+        color:${item.ok?'var(--g)':item.manual?'var(--am)':'var(--t4)'}">
+        <i class="fas fa-${item.ok?'check':item.manual?'hand-point-right':'clock'}"></i>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:${item.ok?'var(--t1)':'var(--t2)'}">
+          ${item.ok?'✅':'⏳'} ${item.label}
+          ${item.manual?'<span style="font-size:10px;background:rgba(217,119,6,.1);color:var(--am);padding:1px 7px;border-radius:4px;margin-left:6px">Manual</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${item.sub}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
 // ─── INIT APP ─────────────────────────────────────────
 function initApp() {
   initTheme();
@@ -2401,6 +2736,7 @@ function initApp() {
     document.getElementById('enq-o4').value = 'Gospel';
   }
 
+  initApiPanel();
   logActivity('Painel iniciado');
 }
 
