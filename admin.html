@@ -2293,6 +2293,7 @@ function renderSlides() {
       <span class="badge ${s.active ? 'badge-g' : 'badge-r'}">${s.active ? 'Ativo' : 'Inativo'}</span>
       <div class="drag-acts">
         <button class="btn btn-o btn-sm btn-icon" onclick="toggleSlide(${s.id})" title="Ativar/Desativar"><i class="fas fa-eye${s.active ? '' : '-slash'}"></i></button>
+        <button class="btn btn-p btn-sm btn-icon" onclick="editSlide(${s.id})" title="Editar"><i class="fas fa-pen"></i></button>
         <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Deletar slide?','O slide será removido permanentemente.','danger',()=>deleteSlide(${s.id}))" title="Deletar"><i class="fas fa-trash"></i></button>
       </div>
     </div>
@@ -2710,7 +2711,10 @@ function renderProgs() {
         <div class="drag-title">${p.nome}</div>
         <div class="drag-sub">${p.host} — ${p.inicio || '--:--'} às ${p.fim || '--:--'} — ${p.dias || 'Diário'}</div>
       </div>
-      <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover programa?','O programa será excluído da grade.','danger',()=>delProg(${p.id}))"><i class="fas fa-trash"></i></button>
+      <div class="drag-acts">
+        <button class="btn btn-p btn-sm btn-icon" onclick="editProg(${p.id})" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover programa?','O programa será excluído da grade.','danger',()=>delProg(${p.id}))"><i class="fas fa-trash"></i></button>
+      </div>
     </div>
   `).join('') || '<div style="text-align:center;padding:24px;color:var(--t4);font-size:13px">Nenhum programa cadastrado</div>';
 }
@@ -2774,7 +2778,10 @@ function renderEps() {
         <div class="drag-title">${e.titulo}</div>
         <div class="drag-sub"><a href="https://youtu.be/${e.ytid}" target="_blank" style="color:var(--p)">${e.ytid}</a> — ${fmtDate(e.data)}</div>
       </div>
-      <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover episódio?','','danger',()=>delEp(${e.id}))"><i class="fas fa-trash"></i></button>
+      <div class="drag-acts">
+        <button class="btn btn-p btn-sm btn-icon" onclick="editEp(${e.id})" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover episódio?','','danger',()=>delEp(${e.id}))"><i class="fas fa-trash"></i></button>
+      </div>
     </div>
   `).join('') || '<div style="font-size:13px;color:var(--t4);padding:10px 0">Nenhum episódio manual</div>';
 }
@@ -2814,7 +2821,10 @@ function renderTop() {
       <div style="width:24px;text-align:center;font-weight:700;color:var(--t3)">${i+1}</div>
       <div class="drag-info"><div class="drag-title">${t.song}</div><div class="drag-sub">${t.artist}</div></div>
       <span>${icons[t.trend]||''}</span>
-      <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover música?','','danger',()=>delTop(${t.id}))"><i class="fas fa-trash"></i></button>
+      <div class="drag-acts">
+        <button class="btn btn-p btn-sm btn-icon" onclick="editTop(${t.id},${i})" title="Editar"><i class="fas fa-pen"></i></button>
+        <button class="btn btn-r btn-sm btn-icon" onclick="confirmAction('Remover música?','','danger',()=>delTop(${t.id}))"><i class="fas fa-trash"></i></button>
+      </div>
     </div>
   `).join('') || '<div style="text-align:center;padding:24px;color:var(--t4);font-size:13px">Nenhuma música cadastrada</div>';
 }
@@ -2861,6 +2871,175 @@ function renderEnqStats() {
   // preenche campos
   document.getElementById('enq-q').value = e.q;
   (e.opts||[]).forEach((o,i) => { const el = document.getElementById('enq-o'+(i+1)); if (el) el.value = o; });
+}
+
+
+// ═══════════════════════════════════════════════════
+//  FUNÇÕES DE EDIÇÃO — Slides, Programas, Top, Eps
+// ═══════════════════════════════════════════════════
+
+// ── EDITAR SLIDE ─────────────────────────────────────
+function editSlide(id) {
+  const s = (S.get('slides')||[]).find(x => String(x.id)===String(id));
+  if (!s) { toast('error','Slide não encontrado',''); return; }
+  // Preenche form
+  document.getElementById('sl-title').value = s.title  || s.titulo   || '';
+  document.getElementById('sl-sub').value   = s.sub    || s.subtitulo|| '';
+  document.getElementById('sl-img').value   = s.img    || s.imagem_url|| '';
+  document.getElementById('sl-tag').value   = s.tag    || 'Destaque';
+  document.getElementById('sl-btn').value   = s.btn    || s.btn_texto || '';
+  document.getElementById('sl-link').value  = s.link   || s.btn_link  || '';
+  document.getElementById('sl-active').checked = s.active !== false && s.ativo !== 0;
+  // Scroll para o form
+  document.getElementById('sl-title').scrollIntoView({behavior:'smooth', block:'center'});
+  document.getElementById('sl-title').focus();
+  // Troca botão
+  const addBtn = document.querySelector('[onclick="addSlide()"]');
+  if (addBtn) {
+    addBtn.innerHTML = '<span class="label"><i class="fas fa-save"></i>Salvar Alterações</span><span class="spin"><i class="fas fa-circle-notch"></i></span>';
+    addBtn.onclick = () => updateSlide(id);
+    addBtn.classList.remove('btn-p'); addBtn.classList.add('btn-g');
+  }
+  toast('info','Editando slide','Altere os campos e clique em Salvar Alterações');
+}
+
+async function updateSlide(id) {
+  const d = {
+    titulo: document.getElementById('sl-title').value, title: document.getElementById('sl-title').value,
+    subtitulo: document.getElementById('sl-sub').value, sub: document.getElementById('sl-sub').value,
+    imagem_url: document.getElementById('sl-img').value, img: document.getElementById('sl-img').value,
+    tag: document.getElementById('sl-tag').value || 'Destaque',
+    btn_texto: document.getElementById('sl-btn').value, btn: document.getElementById('sl-btn').value,
+    btn_link: document.getElementById('sl-link').value, link: document.getElementById('sl-link').value,
+    ativo: document.getElementById('sl-active').checked ? 1 : 0,
+    active: document.getElementById('sl-active').checked,
+  };
+  // Local
+  const slides = S.get('slides')||[];
+  const idx = slides.findIndex(x => String(x.id)===String(id));
+  if (idx>=0) { slides[idx]={...slides[idx],...d,id}; S.set('slides',slides); }
+  // API
+  if (API_BASE && await ensureToken()) {
+    try { const r = await Api.put('/slides/'+id,d); toast(r.success?'success':'warning','Slide atualizado!',r.success?'✅ Banco':'💾 Local'); }
+    catch(e) { toast('success','Slide atualizado!','💾 Local'); }
+  } else { toast('success','Slide atualizado!','💾 Local'); }
+  // Restaura botão
+  const btn = document.querySelector('[onclick*="updateSlide"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-plus"></i>Adicionar Slide</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=addSlide; btn.classList.add('btn-p'); btn.classList.remove('btn-g'); }
+  ['sl-title','sl-sub','sl-img','sl-tag','sl-btn','sl-link'].forEach(x => document.getElementById(x).value='');
+  document.getElementById('sl-active').checked = true;
+  renderSlides(); dSt();
+}
+
+// ── EDITAR PROGRAMA ──────────────────────────────────
+function editProg(id) {
+  const p = (S.get('progs')||[]).find(x => String(x.id)===String(id));
+  if (!p) { toast('error','Programa não encontrado',''); return; }
+  document.getElementById('pr-nome').value   = p.nome || '';
+  document.getElementById('pr-host').value   = p.host || '';
+  document.getElementById('pr-inicio').value = p.inicio || p.horario_ini || p.st || '';
+  document.getElementById('pr-fim').value    = p.fim   || p.horario_fim  || p.en || '';
+  document.getElementById('pr-dias').value   = p.dias  || p.days || '';
+  document.getElementById('pr-foto').value   = p.foto_url || p.foto || p.img || '';
+  document.getElementById('pr-desc').value   = p.descricao || p.desc || '';
+  document.getElementById('pr-nome').scrollIntoView({behavior:'smooth',block:'center'});
+  document.getElementById('pr-nome').focus();
+  const btn = document.querySelector('[onclick="addProg()"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-save"></i>Salvar Alterações</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=()=>updateProg(id); btn.classList.remove('btn-p'); btn.classList.add('btn-g'); }
+  toast('info','Editando programa',p.nome);
+}
+
+async function updateProg(id) {
+  const d = {
+    nome: document.getElementById('pr-nome').value,
+    host: document.getElementById('pr-host').value,
+    inicio: document.getElementById('pr-inicio').value, horario_ini: document.getElementById('pr-inicio').value, st: document.getElementById('pr-inicio').value,
+    fim:    document.getElementById('pr-fim').value,    horario_fim: document.getElementById('pr-fim').value,    en: document.getElementById('pr-fim').value,
+    dias: document.getElementById('pr-dias').value, days: document.getElementById('pr-dias').value,
+    foto_url: document.getElementById('pr-foto').value, foto: document.getElementById('pr-foto').value, img: document.getElementById('pr-foto').value,
+    descricao: document.getElementById('pr-desc').value, desc: document.getElementById('pr-desc').value,
+  };
+  const progs = S.get('progs')||[];
+  const idx = progs.findIndex(x => String(x.id)===String(id));
+  if (idx>=0) { progs[idx]={...progs[idx],...d,id}; S.set('progs',progs); }
+  if (API_BASE && await ensureToken()) {
+    try { const r = await Api.put('/programas/'+id,d); toast(r.success?'success':'warning','Programa atualizado!',r.success?'✅ Banco':'💾 Local'); }
+    catch(e) { toast('success','Programa atualizado!','💾 Local'); }
+  } else { toast('success','Programa atualizado!','💾 Local'); }
+  const btn = document.querySelector('[onclick*="updateProg"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-plus"></i>Adicionar Programa</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=addProg; btn.classList.add('btn-p'); btn.classList.remove('btn-g'); }
+  ['pr-nome','pr-host','pr-inicio','pr-fim','pr-dias','pr-foto','pr-desc'].forEach(x => document.getElementById(x).value='');
+  renderProgs();
+}
+
+// ── EDITAR TOP MÚSICA ────────────────────────────────
+function editTop(id, idx) {
+  const top = S.get('top')||[];
+  const t = top.find(x => String(x.id)===String(id)) || top[idx];
+  if (!t) { toast('error','Música não encontrada',''); return; }
+  document.getElementById('tp-song').value   = t.song   || t.musica  || '';
+  document.getElementById('tp-artist').value = t.artist || t.artista || '';
+  document.getElementById('tp-trend').value  = t.trend  || t.tendencia || 'same';
+  document.getElementById('tp-cover').value  = t.cover  || t.capa_url  || '';
+  document.getElementById('tp-song').scrollIntoView({behavior:'smooth',block:'center'});
+  document.getElementById('tp-song').focus();
+  const btn = document.querySelector('[onclick="addTop()"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-save"></i>Salvar Alterações</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=()=>updateTop(id); btn.classList.remove('btn-p'); btn.classList.add('btn-g'); }
+  toast('info','Editando música',t.song||t.musica||'');
+}
+
+async function updateTop(id) {
+  const d = {
+    song: document.getElementById('tp-song').value, musica: document.getElementById('tp-song').value,
+    artist: document.getElementById('tp-artist').value, artista: document.getElementById('tp-artist').value,
+    trend: document.getElementById('tp-trend').value, tendencia: document.getElementById('tp-trend').value,
+    cover: document.getElementById('tp-cover').value, capa_url: document.getElementById('tp-cover').value,
+  };
+  const top = S.get('top')||[];
+  const idx = top.findIndex(x => String(x.id)===String(id));
+  if (idx>=0) { top[idx]={...top[idx],...d,id}; S.set('top',top); }
+  if (API_BASE && await ensureToken()) {
+    try { const r = await Api.put('/top/'+id,d); toast(r.success?'success':'warning','Música atualizada!',r.success?'✅ Banco':'💾 Local'); }
+    catch(e) { toast('success','Música atualizada!','💾 Local'); }
+  } else { toast('success','Música atualizada!','💾 Local'); }
+  const btn = document.querySelector('[onclick*="updateTop"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-plus"></i>Adicionar</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=addTop; btn.classList.add('btn-p'); btn.classList.remove('btn-g'); }
+  ['tp-song','tp-artist','tp-cover'].forEach(x => document.getElementById(x).value='');
+  renderTop();
+}
+
+// ── EDITAR EPISÓDIO ──────────────────────────────────
+function editEp(id) {
+  const eps = S.get('manualEps')||[];
+  const e = eps.find(x => String(x.id)===String(id));
+  if (!e) { toast('error','Episódio não encontrado',''); return; }
+  document.getElementById('ep-titulo').value = e.titulo || '';
+  document.getElementById('ep-ytid').value   = e.ytid   || e.youtube_id || '';
+  document.getElementById('ep-data').value   = e.data   || e.data_ep   || '';
+  document.getElementById('ep-titulo').scrollIntoView({behavior:'smooth',block:'center'});
+  document.getElementById('ep-titulo').focus();
+  const btn = document.querySelector('[onclick="addEp()"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-save"></i>Salvar Alterações</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=()=>updateEp(id); btn.classList.remove('btn-p'); btn.classList.add('btn-g'); }
+  toast('info','Editando episódio',e.titulo||'');
+}
+
+async function updateEp(id) {
+  const d = {
+    titulo: document.getElementById('ep-titulo').value,
+    ytid: document.getElementById('ep-ytid').value, youtube_id: document.getElementById('ep-ytid').value,
+    data: document.getElementById('ep-data').value, data_ep: document.getElementById('ep-data').value,
+  };
+  const eps = S.get('manualEps')||[];
+  const idx = eps.findIndex(x => String(x.id)===String(id));
+  if (idx>=0) { eps[idx]={...eps[idx],...d,id}; S.set('manualEps',eps); }
+  if (API_BASE && await ensureToken()) {
+    try { const r = await Api.put('/podcast/'+id,d); toast(r.success?'success':'warning','Episódio atualizado!',r.success?'✅ Banco':'💾 Local'); }
+    catch(e) { toast('success','Episódio atualizado!','💾 Local'); }
+  } else { toast('success','Episódio atualizado!','💾 Local'); }
+  const btn = document.querySelector('[onclick*="updateEp"]');
+  if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-plus"></i>Adicionar</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=addEp; btn.classList.add('btn-p'); btn.classList.remove('btn-g'); }
+  ['ep-titulo','ep-ytid','ep-data'].forEach(x => document.getElementById(x).value='');
+  renderEps();
 }
 
 // ─── PUBLICIDADE ──────────────────────────────────────

@@ -26,3 +26,14 @@ class PodcastController {
         Response::ok(null,'Episódio removido.');
     }
 }
+
+    public function update(): void {
+        $b = $this->body;
+        if (empty($b['youtube_id']) && !empty($b['ytid'])) $b['youtube_id'] = $b['ytid'];
+        if (empty($b['data_ep']) && !empty($b['data']))    $b['data_ep']    = $b['data'];
+        $d = Validator::sanitize($b);
+        DB::get()->prepare(
+            "UPDATE podcast_episodios SET titulo=:t,youtube_id=:y,data_ep=:d WHERE id=:id"
+        )->execute([':t'=>$d['titulo']??'',':y'=>$d['youtube_id']??'',':d'=>$d['data_ep']??null,':id'=>$this->id]);
+        Response::ok(['id'=>$this->id],'Episódio atualizado.');
+    }

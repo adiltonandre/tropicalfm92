@@ -53,3 +53,16 @@ class TopMusicaController {
         Response::ok(null,'Música removida.');
     }
 }
+
+    public function update(): void {
+        $b = $this->body;
+        if (empty($b['musica']) && !empty($b['song']))    $b['musica']    = $b['song'];
+        if (empty($b['artista']) && !empty($b['artist'])) $b['artista']   = $b['artist'];
+        if (empty($b['tendencia']) && !empty($b['trend'])) $b['tendencia'] = $b['trend'];
+        if (empty($b['capa_url']) && !empty($b['cover'])) $b['capa_url']  = $b['cover'];
+        $d = Validator::sanitize($b);
+        DB::get()->prepare(
+            "UPDATE top_musicas SET musica=:m,artista=:a,tendencia=:t,capa_url=:c WHERE id=:id"
+        )->execute([':m'=>$d['musica']??'',':a'=>$d['artista']??'',':t'=>$d['tendencia']??'same',':c'=>$d['capa_url']??null,':id'=>$this->id]);
+        Response::ok(['id'=>$this->id],'Música atualizada.');
+    }
