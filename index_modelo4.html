@@ -881,6 +881,25 @@ const LIVE_EMBED=`https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID
 
 const S={get:k=>{try{return JSON.parse(localStorage.getItem('tf927_'+k))}catch(e){return null}},set:(k,v)=>localStorage.setItem('tf927_'+k,JSON.stringify(v)),del:k=>localStorage.removeItem('tf927_'+k)};
 
+// ═══ API SYNC ═══
+let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+
+async function apiGet(path, fbKey) {
+  if (!_API_BASE) return S.get(fbKey);
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(_API_BASE + path, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return S.get(fbKey);
+    const j = await r.json();
+    if (!j.success) return S.get(fbKey);
+    if (j.data?.items) return j.data.items;
+    if (Array.isArray(j.data)) return j.data;
+    return j.data || S.get(fbKey);
+  } catch { return S.get(fbKey); }
+}
+
 function def(){
   if(!S.get('player'))S.set('player',{stream:'',name:'Tropical FM 92.7',freq:'92.7 MHz',song:'Ao Vivo',artist:'Tropical FM 92.7 — Pres. Médici, RO',program:'Manhã Tropical',host:'Presidente Médici, RO',next:'Tarde Tropical 12h'});
   if(!S.get('news'))S.set('news',[
@@ -975,7 +994,11 @@ function rNews(){
   c4.innerHTML=grid.map(n=>`<div class="nc2" onclick="oNM(${n.id})"><div class="nc2-img">${n.img?`<img src="${n.img}" alt="${n.title}" onerror="this.style.display='none'">`:''}<div class="nc2-cat">${n.cat}</div></div><div class="nc2-body"><div class="nc2-title">${n.title}</div><div class="nc2-meta"><span><i class="fas fa-user"></i>${n.author}</span><span><i class="fas fa-clock"></i>${fd(n.date)}</span></div></div></div>`).join('');
 }
 
-function oNM(id){const n=(S.get('news')||[]).find(x=>x.id==id);if(!n)return;document.getElementById('mCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px;"></i>${n.cat}`;document.getElementById('mTitle').textContent=n.title;document.getElementById('mMeta').innerHTML=`<i class="fas fa-user" style="color:var(--r);margin-right:4px;"></i>${n.author}<span style="margin-left:14px;"><i class="fas fa-clock" style="color:var(--r);margin-right:4px;"></i>${fd(n.date)}</span>`;document.getElementById('mBody').innerHTML=n.content||n.exc||'';const img=document.getElementById('mImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nm').classList.add('open');}
+async function oNM(id){
+  let n=(S.get('news')||[]).find(x=>x.id==id);
+  if(!n&&_API_BASE){try{const r=await fetch(_API_BASE+'/noticias/'+id);const j=await r.json();
+    if(j.success&&j.data){const d=j.data;n={id:d.id,title:d.titulo,cat:d.categoria,exc:d.resumo,content:d.conteudo,img:d.imagem_url,author:d.autor,date:d.publicado_em||d.criado_em};}
+  }catch(e){}}if(!n)return;document.getElementById('mCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px;"></i>${n.cat}`;document.getElementById('mTitle').textContent=n.title;document.getElementById('mMeta').innerHTML=`<i class="fas fa-user" style="color:var(--r);margin-right:4px;"></i>${n.author}<span style="margin-left:14px;"><i class="fas fa-clock" style="color:var(--r);margin-right:4px;"></i>${fd(n.date)}</span>`;document.getElementById('mBody').innerHTML=n.content||n.exc||'';const img=document.getElementById('mImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nm').classList.add('open');}
 function closeModal(e){if(e.target.id==='nm')cNM();}function cNM(){document.getElementById('nm').classList.remove('open');}
 
 // YOUTUBE VIDEOS — carrega via RSS/noembed
@@ -1044,7 +1067,9 @@ async function loadYTVideos(){
 function rLive(){const lv=S.get('live')||{};document.getElementById('fafTitle').textContent=lv.title||'Frente a Frente';document.getElementById('fafDesc').textContent=lv.desc||'Entrevistas e debates toda sexta às 19h.';const ifr=document.getElementById('liveIfr'),off=document.getElementById('fafOffline'),pill=document.getElementById('livePill');if(lv.active&&lv.url){ifr.src=lv.url;ifr.style.display='';off.style.display='none';pill.classList.add('show');}else{ifr.src='';ifr.style.display='none';off.style.display='flex';pill.classList.remove('show');}}
 
 // TOP
-function rTop(){const top=S.get('top')||[];const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};const mk=(t,i)=>`<div class="ti"><div class="ti-num ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="ti-cov">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-music\\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="ti-info"><div class="ti-song">${t.song}</div><div class="ti-art">${t.artist}</div></div><div class="ti-tr ${t.trend}">${ti[t.trend]||''}</div></div>`;document.getElementById('topLeft').innerHTML=top.slice(0,5).map((t,i)=>mk(t,i)).join('');document.getElementById('topRight').innerHTML=top.slice(5,10).map((t,i)=>mk(t,i+5)).join('');}
+async function rTop(){
+  const rawTop=await apiGet('/top','top');
+  const top=(rawTop||[]).map(t=>({...t,song:t.song||t.musica||'',artist:t.artist||t.artista||'',trend:t.trend||t.tendencia||'same',cover:t.cover||t.capa_url||''}));const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};const mk=(t,i)=>`<div class="ti"><div class="ti-num ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="ti-cov">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-music\\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="ti-info"><div class="ti-song">${t.song}</div><div class="ti-art">${t.artist}</div></div><div class="ti-tr ${t.trend}">${ti[t.trend]||''}</div></div>`;document.getElementById('topLeft').innerHTML=top.slice(0,5).map((t,i)=>mk(t,i)).join('');document.getElementById('topRight').innerHTML=top.slice(5,10).map((t,i)=>mk(t,i+5)).join('');}
 
 // ABOUT
 function rAbout(){const a=S.get('about')||{};if(a.text)document.getElementById('aText').innerHTML=a.text;if(a.anos)document.getElementById('stAnos').textContent=a.anos;if(a.ouv)document.getElementById('stOuv').textContent=a.ouv;if(a.prog)document.getElementById('stProg').textContent=a.prog;if(a.foto){const img=document.getElementById('sobreMainImg');if(img)img.src=a.foto;}}

@@ -781,6 +781,25 @@ input:checked+.tsl:before{transform:translateX(22px)}
 </div>
 <script>
 const S={get:k=>{try{return JSON.parse(localStorage.getItem('tf927_'+k))}catch(e){return null}},set:(k,v)=>localStorage.setItem('tf927_'+k,JSON.stringify(v)),del:k=>localStorage.removeItem('tf927_'+k)};
+// ═══ API SYNC ═══
+let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+
+async function apiGet(path, fbKey) {
+  if (!_API_BASE) return S.get(fbKey);
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(_API_BASE + path, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return S.get(fbKey);
+    const j = await r.json();
+    if (!j.success) return S.get(fbKey);
+    if (j.data?.items) return j.data.items;
+    if (Array.isArray(j.data)) return j.data;
+    return j.data || S.get(fbKey);
+  } catch { return S.get(fbKey); }
+}
+
 function def(){
   if(!S.get('player'))S.set('player',{stream:'',name:'Tropical FM 92.7',freq:'92.7 MHz',song:'Ao Vivo',artist:'Tropical FM 92.7 — Pres. Médici, RO',program:'Manhã Tropical',host:'Presidente Médici, RO',next:'Tarde Tropical 12h'});
   if(!S.get('news'))S.set('news',[
@@ -811,11 +830,17 @@ function rNews(){
   const f=news[0],rest=news.slice(1,4);
   el.innerHTML=`<div class="nf" onclick="oNM(${f.id})">${f.img?`<div class="nf-img"><img src="${f.img}" alt="${f.title}" onerror="this.style.display='none'"><div class="nf-img-ov"></div><div class="nf-cat">${f.cat}</div></div>`:`<div class="nf-img" style="height:280px;display:flex;align-items:center;justify-content:center;font-size:64px;color:var(--text3)"><i class="fas fa-newspaper"></i></div>`}<div class="nf-body"><div class="nf-title">${f.title}</div><div class="nf-exc">${f.exc||f.excerpt||''}</div><div class="nmeta"><span><i class="fas fa-user"></i>${f.author}</span><span><i class="fas fa-calendar"></i>${fd(f.date)}</span></div></div></div><div class="ns">${rest.map(n=>`<div class="nc" onclick="oNM(${n.id})"><div class="nc-thumb">${n.img?`<img src="${n.img}" alt="${n.title}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-newspaper\'></i>'">`:'<i class="fas fa-newspaper"></i>'}</div><div class="nc-body"><div class="ncat">${n.cat}</div><div class="nc-title">${n.title}</div><div class="nmeta"><span><i class="fas fa-calendar"></i>${fd(n.date)}</span></div></div></div>`).join('')}</div>`;
 }
-function oNM(id){const n=(S.get('news')||[]).find(x=>x.id==id);if(!n)return;document.getElementById('mCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px;"></i>${n.cat}`;document.getElementById('mTitle').textContent=n.title;document.getElementById('mMeta').innerHTML=`<i class="fas fa-user" style="color:var(--red);margin-right:5px;"></i>${n.author} <span style="margin-left:14px;"><i class="fas fa-calendar" style="color:var(--red);margin-right:5px;"></i>${fd(n.date)}</span>`;document.getElementById('mBody').innerHTML=n.content||n.exc||'';const img=document.getElementById('mImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nm').classList.add('open');}
+async function oNM(id){
+  let n=(S.get('news')||[]).find(x=>x.id==id);
+  if(!n&&_API_BASE){try{const r=await fetch(_API_BASE+'/noticias/'+id);const j=await r.json();
+    if(j.success&&j.data){const d=j.data;n={id:d.id,title:d.titulo,cat:d.categoria,exc:d.resumo,content:d.conteudo,img:d.imagem_url,author:d.autor,date:d.publicado_em||d.criado_em};}
+  }catch(e){}}if(!n)return;document.getElementById('mCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px;"></i>${n.cat}`;document.getElementById('mTitle').textContent=n.title;document.getElementById('mMeta').innerHTML=`<i class="fas fa-user" style="color:var(--red);margin-right:5px;"></i>${n.author} <span style="margin-left:14px;"><i class="fas fa-calendar" style="color:var(--red);margin-right:5px;"></i>${fd(n.date)}</span>`;document.getElementById('mBody').innerHTML=n.content||n.exc||'';const img=document.getElementById('mImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nm').classList.add('open');}
 function cModal(e){if(e.target.id==='nm')cNM();}function cNM(){document.getElementById('nm').classList.remove('open');}
 function rVids(){document.getElementById('vGrid').innerHTML=(S.get('videos')||[]).map(v=>`<div class="vc" onclick="window.open('https://www.youtube.com/watch?v=${v.ytid}','_blank')"><div class="vt"><img src="https://img.youtube.com/vi/${v.ytid}/hqdefault.jpg" alt="${v.title}" onerror="this.style.display='none'"><div class="vo"><div class="vob"><i class="fas fa-play"></i></div></div></div><div class="vcb"><div class="vcep"><i class="fas fa-podcast" style="margin-right:4px;"></i>Episódio</div><div class="vct">${v.title}</div><div class="vcd"><i class="fas fa-calendar"></i>${fd(v.date)}</div></div></div>`).join('');}
 function rLive(){const lv=S.get('live')||{};document.getElementById('lT').textContent=lv.title||'Frente a Frente AO VIVO';document.getElementById('lD').textContent=lv.desc||'';const ifr=document.getElementById('lIfr'),off=document.getElementById('lOff'),badge=document.querySelector('.lb');if(lv.active&&lv.url){ifr.src=lv.url;ifr.style.display='';off.style.display='none';badge.style.display='inline-flex';}else{ifr.src='';ifr.style.display='none';off.style.display='flex';badge.style.display='none';}}
-function rTop(){const top=S.get('top')||[];const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};document.getElementById('topL').innerHTML=top.map((t,i)=>`<div class="ti"><div class="tr2 ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="tc">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-music\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="ti-info"><div class="ti-song">${t.song}</div><div class="ti-art">${t.artist}</div></div><div class="tt ${t.trend}">${ti[t.trend]||''}</div></div>`).join('');}
+async function rTop(){
+  const rawTop=await apiGet('/top','top');
+  const top=(rawTop||[]).map(t=>({...t,song:t.song||t.musica||'',artist:t.artist||t.artista||'',trend:t.trend||t.tendencia||'same',cover:t.cover||t.capa_url||''}));const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};document.getElementById('topL').innerHTML=top.map((t,i)=>`<div class="ti"><div class="tr2 ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="tc">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-music\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="ti-info"><div class="ti-song">${t.song}</div><div class="ti-art">${t.artist}</div></div><div class="tt ${t.trend}">${ti[t.trend]||''}</div></div>`).join('');}
 function rAbout(){const a=S.get('about')||{};if(a.title)document.getElementById('aTitle').innerHTML=a.title.replace(',','<br>').replace('Amor','Amor <span>');if(a.text)document.getElementById('aText').innerHTML=a.text;if(a.anos)document.getElementById('stAnos').textContent=a.anos;if(a.ouv)document.getElementById('stOuv').textContent=a.ouv;if(a.prog)document.getElementById('stProg').textContent=a.prog;if(a.photos){const ps=a.photos.split('\n').filter(Boolean);if(ps.length)document.getElementById('aPhotos').innerHTML=ps.map((p,i)=>`<div class="ap" ${i===0?'style="grid-column:1/-1;height:190px;"':'style="height:130px;"'}><img src="${p}" alt="Foto" onerror="this.parentElement.innerHTML='<i class=\'fas fa-image\'></i>'"></div>`).join('');}}
 function rAd(){const ad=S.get('ad')||{};if(!ad.active)return;setTimeout(()=>{document.getElementById('adC').innerHTML=ad.img?`<a href="${ad.link||'#'}" target="_blank"><img src="${ad.img}" alt="Publicidade" style="width:100%;border-radius:8px;"></a>`:`<a href="${ad.link||'#'}" target="_blank" style="display:block;background:linear-gradient(135deg,var(--red),#8B0000);color:#fff;padding:20px;border-radius:10px;text-align:center;font-family:var(--font-d);font-weight:900;font-size:15px;"><i class="fas fa-bullhorn" style="margin-right:8px;"></i>${ad.text||'Anuncie aqui!'}</a>`;document.getElementById('adb').classList.add('open');},(ad.delay||5)*1000);}
 function closeAd(){document.getElementById('adb').classList.remove('open');}
