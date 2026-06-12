@@ -2120,9 +2120,12 @@ function toggleSlide(id) {
   const s = slides.find(x => x.id === id);
   if (s) { s.active = !s.active; S.set('slides', slides); renderSlides(); toast('success', s.active ? 'Slide ativado' : 'Slide desativado', ''); }
 }
-function deleteSlide(id) {
+async function deleteSlide(id) {
   S.set('slides', (S.get('slides') || []).filter(s => s.id !== id));
-  renderSlides();
+  renderSlides(); dSt();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.del('/slides/' + id); } catch(e) {}
+  }
   toast('success','Slide removido','');
 }
 
@@ -2183,9 +2186,12 @@ function pubNews(id) {
   const news = S.get('news') || []; const n = news.find(x => x.id === id);
   if (n) { n.status = 'published'; S.set('news', news); renderNewsList(); toast('success','Notícia publicada!',''); }
 }
-function delNews(id) {
+async function delNews(id) {
   S.set('news', (S.get('news') || []).filter(n => n.id !== id));
-  renderNewsList();
+  renderNewsList(); dSt();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.del('/noticias/' + id); } catch(e) {}
+  }
   toast('success','Notícia removida','');
 }
 function swTab(panel, tab, btn) {
@@ -2236,9 +2242,13 @@ function renderProgs() {
     </div>
   `).join('') || '<div style="text-align:center;padding:24px;color:var(--t4);font-size:13px">Nenhum programa cadastrado</div>';
 }
-function delProg(id) {
+async function delProg(id) {
   S.set('progs', (S.get('progs') || []).filter(p => p.id !== id));
-  renderProgs(); toast('success','Programa removido','');
+  renderProgs();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.del('/programas/' + id); } catch(e) {}
+  }
+  toast('success','Programa removido','');
 }
 
 // ─── LIVE / PODCAST ───────────────────────────────────
@@ -2332,9 +2342,13 @@ function renderTop() {
     </div>
   `).join('') || '<div style="text-align:center;padding:24px;color:var(--t4);font-size:13px">Nenhuma música cadastrada</div>';
 }
-function delTop(id) {
+async function delTop(id) {
   S.set('top', (S.get('top') || []).filter(t => t.id !== id));
-  renderTop(); toast('success','Música removida','');
+  renderTop();
+  if (API_BASE && API_TOKEN) {
+    try { await Api.del('/top/' + id); } catch(e) {}
+  }
+  toast('success','Música removida','');
 }
 
 // ─── ENQUETE ─────────────────────────────────────────
@@ -2466,11 +2480,14 @@ function updateColorPreview() {
     </div>
   `;
 }
-function saveColors() {
+async function saveColors() {
   const d = {};
   Object.keys(DEFAULT_COLORS).forEach(k => { d[k] = document.getElementById('cor-' + k)?.value || DEFAULT_COLORS[k]; });
   S.set('cores', d); clearUnsaved();
-  toast('success','Cores salvas!','A paleta de cores foi atualizada.');
+  if (API_BASE && API_TOKEN) {
+    try { await Api.put('/config', { tema_cores: d }); toast('success','Cores salvas!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Cores salvas!','💾 Salvo localmente'); }
+  } else { toast('success','Cores salvas!','💾 Salvo localmente'); }
 }
 function resetColors() {
   confirmAction('Resetar cores?','As cores serão revertidas para o padrão.','warning',() => {
@@ -2501,10 +2518,13 @@ function previewFonts() {
   document.getElementById('fp-titulo-sample').style.fontFamily = `'${t}'`;
   document.getElementById('fp-corpo-sample').style.fontFamily = `'${c}'`;
 }
-function saveFonts() {
+async function saveFonts() {
   const d = { titulo: document.getElementById('fnt-titulo').value, corpo: document.getElementById('fnt-corpo').value };
   S.set('fontes', d); clearUnsaved();
-  toast('success','Fontes salvas!','A tipografia foi atualizada.');
+  if (API_BASE && API_TOKEN) {
+    try { await Api.put('/config', { tema_fontes: d }); toast('success','Fontes salvas!','✅ Salvo no banco'); }
+    catch(e) { toast('success','Fontes salvas!','💾 Salvo localmente'); }
+  } else { toast('success','Fontes salvas!','💾 Salvo localmente'); }
 }
 function resetFonts() {
   document.getElementById('fnt-titulo').value = 'Barlow Condensed';

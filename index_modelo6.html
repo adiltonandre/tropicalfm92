@@ -1101,7 +1101,29 @@ input:checked+.tsl::before{transform:translateX(21px)}
 </div>
 <script>
 const CID="UCE6Lkid4h406OQ2PEp60ocg",CURL="https://www.youtube.com/@FrenteaFrente",STREAM="http://play.radios.com.br/14864";
-const S={get:k=>{try{return JSON.parse(localStorage.getItem('tf6_'+k))}catch{return null}},set:(k,v)=>localStorage.setItem('tf6_'+k,JSON.stringify(v)),del:k=>localStorage.removeItem('tf6_'+k)};
+// Usa mesmo prefixo do admin para compartilhar dados
+const _PFX = localStorage.getItem('__adm_prefix') || 'tf6_';
+const S={
+  get:k=>{try{return JSON.parse(localStorage.getItem(_PFX+k))}catch{return null}},
+  set:(k,v)=>localStorage.setItem(_PFX+k,JSON.stringify(v)),
+  del:k=>localStorage.removeItem(_PFX+k)
+};
+// Busca dados da API se disponível
+const _API = localStorage.getItem('__api_base') || '';
+const _TOK = localStorage.getItem('__api_token') || '';
+async function apiGet6(path, fbKey) {
+  if (!_API || !_TOK) return S.get(fbKey);
+  try {
+    const base = _API.replace('https://localhost','http://localhost');
+    const r = await fetch(base+path, { headers:{'Authorization':'Bearer '+_TOK} });
+    if (!r.ok) return S.get(fbKey);
+    const j = await r.json();
+    if (!j.success) return S.get(fbKey);
+    if (j.data?.items) return j.data.items;
+    if (Array.isArray(j.data)) return j.data;
+    return j.data || S.get(fbKey);
+  } catch { return S.get(fbKey); }
+}
 
 function def(){
   if(!S.get('p'))S.set('p',{stream:STREAM,name:'Tropical FM 92.7',freq:'92.7 MHz',song:'Ao Vivo',artist:'Tropical FM 92.7',prog:'Manhã Tropical',host:'Pres. Médici, RO'});
@@ -1160,11 +1182,23 @@ function loadClima(){const data=[{i:'☀️',t:33,d:'Ensolarado',h:62,w:9,mx:36,
 
 function rStrip(){const now=new Date();const nm=now.getHours()*60+now.getMinutes();const progs=S.get('progs')||[];document.getElementById('psRow').innerHTML=progs.map(p=>{const[sh,sm]=(p.st||'00:00').split(':').map(Number);const[eh,em]=(p.en||'00:00').split(':').map(Number);const on=nm>=sh*60+sm&&nm<eh*60+em;return `<div class="pc${on?' on-air':''}"><div class="pc-av">${p.img?`<img src="${p.img}" alt="${p.nome}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-microphone\'></i>'">`:'<i class="fas fa-microphone"></i>'}</div><div><div class="pc-nm">${p.nome}</div><div class="pc-hr"><i class="fas fa-clock"></i>${p.st}–${p.en}</div>${on?'<div class="pc-air"><i class="fas fa-circle" style="font-size:6px"></i>AO VIVO</div>':''}</div></div>`;}).join('');}
 
-function rNews(){const news=(S.get('news')||[]).filter(n=>n.status==='published');const g=document.getElementById('newsGrid');if(!news.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txt3)"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';return;}g.innerHTML=news.map(n=>`<div class="ncard" onclick="oNM(${n.id})"><div class="ncard-img">${n.img?`<img src="${n.img}" alt="${n.title}" loading="lazy" onerror="this.parentElement.className='ncard-img-ph'">`:'<div class="ncard-img-ph"><i class="fas fa-newspaper"></i></div>'}<div class="ncard-cat">${n.cat}</div></div><div class="ncard-body"><div class="ncard-title">${n.title}</div><div class="ncard-exc">${n.exc||''}</div><div class="ncard-meta"><span><i class="fas fa-user"></i>${n.author}</span><span><i class="fas fa-clock"></i>${fd(n.date)}</span></div></div></div>`).join('');}
+async function rNews(){
+  const raw = await apiGet6('/noticias?status=published', 'news');
+  const news=(raw||[]).filter(n=>n.status==='published'||n.titulo||n.title).map(n=>({
+    ...n, title:n.title||n.titulo, cat:n.cat||n.categoria,
+    exc:n.exc||n.resumo, img:n.img||n.imagem_url, author:n.author||n.autor,
+  }));const g=document.getElementById('newsGrid');if(!news.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txt3)"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';return;}g.innerHTML=news.map(n=>`<div class="ncard" onclick="oNM(${n.id})"><div class="ncard-img">${n.img?`<img src="${n.img}" alt="${n.title}" loading="lazy" onerror="this.parentElement.className='ncard-img-ph'">`:'<div class="ncard-img-ph"><i class="fas fa-newspaper"></i></div>'}<div class="ncard-cat">${n.cat}</div></div><div class="ncard-body"><div class="ncard-title">${n.title}</div><div class="ncard-exc">${n.exc||''}</div><div class="ncard-meta"><span><i class="fas fa-user"></i>${n.author}</span><span><i class="fas fa-clock"></i>${fd(n.date)}</span></div></div></div>`).join('');}
 function oNM(id){const n=(S.get('news')||[]).find(x=>x.id==id);if(!n)return;document.getElementById('nmCat').innerHTML=`<i class="fas fa-tag" style="margin-right:4px"></i>${n.cat}`;document.getElementById('nmTitle').textContent=n.title;document.getElementById('nmMeta').innerHTML=`<i class="fas fa-user" style="color:var(--vermelho);margin-right:4px"></i>${n.author} <span style="margin-left:12px"><i class="fas fa-clock" style="color:var(--vermelho);margin-right:4px"></i>${fd(n.date)}</span>`;document.getElementById('nmText').innerHTML=n.content||n.exc||'';const img=document.getElementById('nmImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nModal').classList.add('open');}
 function closeNM(e){if(e.target.id==='nModal')cNM();}function cNM(){document.getElementById('nModal').classList.remove('open');}
 
-function rProg(){const progs=S.get('progs')||[];const now=new Date();const nm=now.getHours()*60+now.getMinutes();document.getElementById('progGrid').innerHTML=progs.map(p=>{const[sh,sm]=(p.st||'00:00').split(':').map(Number);const[eh,em]=(p.en||'00:00').split(':').map(Number);const on=nm>=sh*60+sm&&nm<eh*60+em;return `<div class="prog-card${on?' on-air':''}"><div class="prog-img">${p.img?`<img src="${p.img}" alt="${p.nome}" onerror="this.style.display='none'">`:'<div style="height:100%;background:var(--cinza-e)"></div>'}<div class="prog-img-ov"></div><div class="prog-time"><i class="fas fa-clock" style="font-size:10px"></i>${p.st}–${p.en}</div></div><div class="prog-body"><div class="prog-nm">${p.nome}</div><div class="prog-host"><i class="fas fa-microphone-alt"></i>${p.host}</div>${p.desc?`<div style="font-size:11px;color:var(--txt3);margin-bottom:8px;line-height:1.45">${p.desc}</div>`:''}<div class="prog-days">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<span class="prog-day ${p.days&&p.days.includes(d)?'on':''}">${d}</span>`).join('')}</div></div></div>`;}).join('');document.getElementById('progModalTable').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--vermelho)"><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Programa</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Horário</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Locutor</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Dias</th></tr></thead><tbody>${progs.map(p=>`<tr style="border-bottom:1px solid var(--cinza-e)"><td style="padding:12px 10px;font-family:var(--fd);font-size:15px;font-weight:800;color:var(--azul)">${p.nome}</td><td style="padding:12px 10px;color:var(--vermelho);font-family:var(--fd);font-size:14px;font-weight:700">${p.st}–${p.en}</td><td style="padding:12px 10px;color:var(--txt2)">${p.host}</td><td style="padding:12px 10px;color:var(--txt3)">${p.days||'Diário'}</td></tr>`).join('')}</tbody></table>`;}
+async function rProg(){
+  const raw=await apiGet6('/programas','progs');
+  const progs=(raw||[]).map(p=>({...p,
+    nome:p.nome||p.name, host:p.host,
+    st:p.st||p.horario_ini, en:p.en||p.horario_fim,
+    img:p.img||p.foto_url, desc:p.desc||p.descricao,
+    days:p.days||p.dias,
+  }));const now=new Date();const nm=now.getHours()*60+now.getMinutes();document.getElementById('progGrid').innerHTML=progs.map(p=>{const[sh,sm]=(p.st||'00:00').split(':').map(Number);const[eh,em]=(p.en||'00:00').split(':').map(Number);const on=nm>=sh*60+sm&&nm<eh*60+em;return `<div class="prog-card${on?' on-air':''}"><div class="prog-img">${p.img?`<img src="${p.img}" alt="${p.nome}" onerror="this.style.display='none'">`:'<div style="height:100%;background:var(--cinza-e)"></div>'}<div class="prog-img-ov"></div><div class="prog-time"><i class="fas fa-clock" style="font-size:10px"></i>${p.st}–${p.en}</div></div><div class="prog-body"><div class="prog-nm">${p.nome}</div><div class="prog-host"><i class="fas fa-microphone-alt"></i>${p.host}</div>${p.desc?`<div style="font-size:11px;color:var(--txt3);margin-bottom:8px;line-height:1.45">${p.desc}</div>`:''}<div class="prog-days">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<span class="prog-day ${p.days&&p.days.includes(d)?'on':''}">${d}</span>`).join('')}</div></div></div>`;}).join('');document.getElementById('progModalTable').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--vermelho)"><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Programa</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Horário</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Locutor</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Dias</th></tr></thead><tbody>${progs.map(p=>`<tr style="border-bottom:1px solid var(--cinza-e)"><td style="padding:12px 10px;font-family:var(--fd);font-size:15px;font-weight:800;color:var(--azul)">${p.nome}</td><td style="padding:12px 10px;color:var(--vermelho);font-family:var(--fd);font-size:14px;font-weight:700">${p.st}–${p.en}</td><td style="padding:12px 10px;color:var(--txt2)">${p.host}</td><td style="padding:12px 10px;color:var(--txt3)">${p.days||'Diário'}</td></tr>`).join('')}</tbody></table>`;}
 function openProgModal(){document.getElementById('progModal').classList.add('open');}
 function closeProgModal(e){if(e.target.id==='progModal')document.getElementById('progModal').classList.remove('open');}
 
@@ -1176,8 +1210,21 @@ function closePub(){document.getElementById('pubBox').style.display='none';}
 function rAdf(){const a=S.get('adf')||{};if(!a.active)return;setTimeout(()=>{const c=document.getElementById('adfContent');c.innerHTML=a.img?`<a href="${a.link||'#'}" target="_blank"><img src="${a.img}" style="width:100%;border-radius:8px;display:block"></a>`:`<a href="${a.link||'#'}" target="_blank" style="display:block;background:linear-gradient(135deg,var(--azul),var(--vermelho));color:#fff;padding:18px;border-radius:8px;text-align:center;font-family:var(--fd);font-size:16px;font-weight:800"><i class="fas fa-bullhorn" style="margin-right:8px"></i>${a.text||'Anuncie!'}</a>`;document.getElementById('ad-float').classList.add('on');},(a.delay||8)*1000);}
 function closeAdf(){document.getElementById('ad-float').classList.remove('on');}
 
-function rTop(){const top=S.get('top')||[];const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};document.getElementById('topGrid').innerHTML=top.map((t,i)=>`<div class="top-item"><div class="top-num ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="top-cov">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-music\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="top-info"><div class="top-song">${t.song}</div><div class="top-art">${t.artist}</div></div><div class="top-trend ${t.trend}">${ti[t.trend]||''}</div></div>`).join('');}
-function rEnq(){const e=S.get('enq')||{};if(!e.q)return;document.getElementById('enqQ').textContent=e.q;const tot=(e.votes||[]).reduce((a,b)=>a+b,0);const voted=S.get('enq_v');document.getElementById('enqOpts').innerHTML=(e.opts||[]).map((o,i)=>{const pct=tot>0?Math.round((e.votes[i]||0)/tot*100):0;return `<div class="enq-opt${voted==i?' voted':''}" onclick="vote(${i})" style="${voted!=null?'cursor:default':''}"><div class="enq-fill" style="width:${voted!=null?pct:0}%"></div><div class="enq-txt"><i class="fas fa-${['music','headphones','guitar','pray'][i%4]}" style="margin-right:8px;color:var(--vermelho)"></i>${o}</div>${voted!=null?`<div class="enq-pct">${pct}%</div>`:''}</div>`;}).join('');document.getElementById('enqTotal').textContent=tot>0?`${tot} ${tot===1?'voto':'votos'} registrado${tot===1?'':'s'}`:'Seja o primeiro a votar!';}
+async function rTop(){
+  const raw=await apiGet6('/top','top');
+  const top=(raw||[]).map(t=>({...t,
+    song:t.song||t.musica, artist:t.artist||t.artista,
+    trend:t.trend||t.tendencia, cover:t.cover||t.capa_url,
+  }));const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};document.getElementById('topGrid').innerHTML=top.map((t,i)=>`<div class="top-item"><div class="top-num ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="top-cov">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-music\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="top-info"><div class="top-song">${t.song}</div><div class="top-art">${t.artist}</div></div><div class="top-trend ${t.trend}">${ti[t.trend]||''}</div></div>`).join('');}
+async function rEnq(){
+  let e=S.get('enq')||S.get('enquete')||{};
+  const api=await apiGet6('/enquete','enq');
+  if(api?.enquete){
+    const opts=(api.opcoes||[]).map(o=>o.texto);
+    const votes=(api.opcoes||[]).map(o=>parseInt(o.votos)||0);
+    e={q:api.enquete.pergunta, opts, votes};
+  }
+  if(!e.q)return;document.getElementById('enqQ').textContent=e.q;const tot=(e.votes||[]).reduce((a,b)=>a+b,0);const voted=S.get('enq_v');document.getElementById('enqOpts').innerHTML=(e.opts||[]).map((o,i)=>{const pct=tot>0?Math.round((e.votes[i]||0)/tot*100):0;return `<div class="enq-opt${voted==i?' voted':''}" onclick="vote(${i})" style="${voted!=null?'cursor:default':''}"><div class="enq-fill" style="width:${voted!=null?pct:0}%"></div><div class="enq-txt"><i class="fas fa-${['music','headphones','guitar','pray'][i%4]}" style="margin-right:8px;color:var(--vermelho)"></i>${o}</div>${voted!=null?`<div class="enq-pct">${pct}%</div>`:''}</div>`;}).join('');document.getElementById('enqTotal').textContent=tot>0?`${tot} ${tot===1?'voto':'votos'} registrado${tot===1?'':'s'}`:'Seja o primeiro a votar!';}
 function vote(i){if(S.get('enq_v')!=null)return;const e=S.get('enq')||{};if(!e.votes)e.votes=new Array((e.opts||[]).length).fill(0);e.votes[i]=(e.votes[i]||0)+1;S.set('enq',e);S.set('enq_v',i);rEnq();toast('<i class="fas fa-check"></i> Voto registrado!');}
 function rSobre(){const a=S.get('sobre')||{};if(a.text)document.getElementById('sobreText').innerHTML=a.text;if(a.anos)document.getElementById('stAnos').textContent=a.anos;if(a.ouv)document.getElementById('stOuv').textContent=a.ouv;if(a.prog)document.getElementById('stProg').textContent=a.prog;}
 
