@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Debug API — Tropical FM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;padding:20px;font-size:13px}
+h1{font-size:18px;font-weight:700;color:#7dd3fc;margin-bottom:4px}
+.sub{color:#64748b;font-size:12px;margin-bottom:20px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:14px}
+.card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid #1e293b;font-size:12px}
+.row:last-child{border:none}
+.lbl{color:#94a3b8;min-width:120px;flex-shrink:0}
+.val{color:#e2e8f0;word-break:break-all;font-family:monospace}
+.val.ok{color:#4ade80}.val.err{color:#f87171}.val.warn{color:#fb923c}.val.info{color:#60a5fa}
+.btn{padding:9px 18px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.2s;margin-right:8px;margin-top:4px}
+.btn-b{background:#2550CC;color:#fff}.btn-b:hover{background:#1A3A9E}
+.btn-g{background:#059669;color:#fff}.btn-g:hover{background:#047857}
+.btn-r{background:#dc2626;color:#fff}.btn-r:hover{background:#b91c1c}
+.btn-o{background:#d97706;color:#fff}.btn-o:hover{background:#b45309}
+.log{background:#0f172a;border:1px solid #334155;border-radius:7px;padding:12px;font-family:monospace;font-size:11px;max-height:280px;overflow-y:auto;line-height:1.8;margin-top:10px}
+.log .ts{color:#64748b}
+.log .ok{color:#4ade80}.log .err{color:#f87171}.log .warn{color:#fb923c}.log .req{color:#60a5fa}.log .res{color:#c084fc}
+.sep{border:none;border-top:1px solid #334155;margin:14px 0}
+.inp{width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px 12px;color:#e2e8f0;font-family:monospace;font-size:12px;outline:none;margin-top:6px}
+.inp:focus{border-color:#2550CC}
+textarea.inp{resize:vertical;min-height:80px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase}
+.b-ok{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)}
+.b-err{background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.3)}
+.b-warn{background:rgba(251,146,60,.15);color:#fb923c;border:1px solid rgba(251,146,60,.3)}
+</style>
+</head>
+<body>
+<h1>🔧 Debug API — Tropical FM</h1>
+<p class="sub">Diagnóstico em tempo real da conexão entre admin e banco de dados</p>
+
+<!-- STATUS ATUAL -->
+<div class="card">
+  <h3>📊 Estado Atual do localStorage</h3>
+  <div id="statusRows"></div>
+  <hr class="sep">
+  <button class="btn btn-o" onclick="clearToken()">🗑️ Limpar Token (forçar novo login)</button>
+  <button class="btn btn-r" onclick="clearAll()">💣 Limpar TUDO</button>
+</div>
+
+<!-- TESTE DE CONEXÃO -->
+<div class="card">
+  <h3>🌐 Teste de Conexão</h3>
+  <button class="btn btn-b" onclick="testHealth()">✅ Testar /health</button>
+  <button class="btn btn-b" onclick="testAuth()">🔐 Testar /auth (login)</button>
+  <button class="btn btn-g" onclick="testNews()">📰 Testar GET /noticias</button>
+  <div class="log" id="connLog"><span class="ts">Aguardando testes...</span></div>
+</div>
+
+<!-- TESTE DE CADASTRO REAL -->
+<div class="card">
+  <h3>📝 Teste Cadastro Notícia</h3>
+  <label style="color:#94a3b8;font-size:11px">Título da notícia de teste:</label>
+  <input type="text" class="inp" id="test-titulo" value="Notícia de Teste — Debug">
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-g" onclick="testPostNoticia('published')">📤 POST /noticias (published)</button>
+    <button class="btn btn-o" onclick="testPostNoticia('draft')">📝 POST /noticias (draft)</button>
+  </div>
+  <div class="log" id="newsLog"><span class="ts">Aguardando...</span></div>
+</div>
+
+<!-- PIN LOGIN RÁPIDO -->
+<div class="card">
+  <h3>🔑 Renovar Token</h3>
+  <label style="color:#94a3b8;font-size:11px">PIN (4 dígitos):</label>
+  <input type="password" class="inp" id="pin-inp" maxlength="4" value="1234" style="width:120px;display:inline-block">
+  <button class="btn btn-b" onclick="doLogin()" style="margin-top:8px">🔐 Login → Obter Token</button>
+  <div class="log" id="loginLog"><span class="ts">Aguardando...</span></div>
+</div>
+
+<!-- ENVIO MANUAL -->
+<div class="card">
+  <h3>🛠️ Envio Manual (raw JSON)</h3>
+  <label style="color:#94a3b8;font-size:11px">Endpoint:</label>
+  <input type="text" class="inp" id="raw-endpoint" value="/noticias">
+  <label style="color:#94a3b8;font-size:11px;margin-top:8px;display:block">Body JSON:</label>
+  <textarea class="inp" id="raw-body">{"titulo":"Teste manual","status":"published","categoria":"Geral","resumo":"Teste","conteudo":"<p>Conteúdo</p>","autor":"Debug"}</textarea>
+  <div style="margin-top:8px">
+    <button class="btn btn-b" onclick="rawPost()">📤 POST</button>
+    <button class="btn btn-g" onclick="rawGet()">📥 GET</button>
+  </div>
+  <div class="log" id="rawLog"><span class="ts">Aguardando...</span></div>
+</div>
+
+<div style="text-align:center;margin-top:16px;color:#475569;font-size:11px">
+  ⚠️ Delete este arquivo após o diagnóstico: <code>C:\xampp\htdocs\tropicalfm\debug_api.html</code>
+</div>
+
+<script>
+// Lê config do localStorage
+let API_BASE  = localStorage.getItem('__api_base')  || '';
+let API_TOKEN = localStorage.getItem('__api_token') || '';
+const PREFIX  = localStorage.getItem('__adm_prefix') || 'tf6_';
+
+// Corrige https→http para localhost
+if (API_BASE.startsWith('https://localhost')) {
+  API_BASE = API_BASE.replace('https://localhost','http://localhost');
+}
+
+function log(logId, type, msg) {
+  const el = document.getElementById(logId);
+  const ts = new Date().toLocaleTimeString('pt-BR');
+  el.innerHTML += `\n<span class="ts">[${ts}]</span> <span class="${type}">${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog(id) {
+  document.getElementById(id).innerHTML = '';
+}
+
+function statusRows() {
+  const tokenInfo = API_TOKEN ? `${API_TOKEN.slice(0,40)}...` : '(vazio)';
+  const tokenValid = API_TOKEN ? checkTokenExpiry(API_TOKEN) : false;
+  const news = JSON.parse(localStorage.getItem(PREFIX+'news') || '[]');
+  const rows = [
+    { lbl:'API_BASE',    val: API_BASE || '(não configurado)',  cls: API_BASE?'ok':'err' },
+    { lbl:'API_TOKEN',   val: API_TOKEN ? tokenInfo : '(vazio — faça login!)', cls: tokenValid?'ok':(API_TOKEN?'warn':'err') },
+    { lbl:'Token válido',val: tokenValid ? '✅ Sim' : (API_TOKEN ? '❌ Expirado — faça login novamente' : '❌ Sem token'), cls: tokenValid?'ok':'err' },
+    { lbl:'Prefixo',     val: PREFIX, cls:'info' },
+    { lbl:'Notícias local', val: `${news.length} no localStorage`, cls:'info' },
+  ];
+  document.getElementById('statusRows').innerHTML = rows.map(r =>
+    `<div class="row"><span class="lbl">${r.lbl}</span><span class="val ${r.cls}">${r.val}</span></div>`
+  ).join('');
+}
+
+function checkTokenExpiry(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1]));
+    return payload.exp > Math.floor(Date.now()/1000);
+  } catch { return false; }
+}
+
+async function apiFetch(method, path, body, logId) {
+  const url = API_BASE + path;
+  log(logId, 'req', `${method} ${url}`);
+  if (!API_BASE) { log(logId,'err','❌ API_BASE não configurado!'); return null; }
+  try {
+    const opts = {
+      method,
+      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${API_TOKEN}` }
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(url, opts);
+    const data = await r.json();
+    log(logId, r.ok?'res':'err', `HTTP ${r.status}: ${JSON.stringify(data).slice(0,200)}`);
+    return { status: r.status, data };
+  } catch(e) {
+    log(logId,'err',`❌ Erro de fetch: ${e.message}`);
+    return null;
+  }
+}
+
+async function testHealth() {
+  clearLog('connLog');
+  const r = await apiFetch('GET','/health',null,'connLog');
+  if (r?.data?.success) log('connLog','ok','✅ API online e banco conectado!');
+  else log('connLog','err','❌ API não respondeu corretamente');
+}
+
+async function testAuth() {
+  clearLog('connLog');
+  log('connLog','info','Testando token atual...');
+  if (!API_TOKEN) { log('connLog','err','❌ Sem token. Use "Renovar Token" abaixo.'); return; }
+  const valid = checkTokenExpiry(API_TOKEN);
+  if (!valid) log('connLog','warn','⚠️ Token EXPIRADO — use "Renovar Token" para obter um novo');
+  else log('connLog','ok','✅ Token válido');
+  const r = await apiFetch('GET','/noticias',null,'connLog');
+  if (r?.status === 401) log('connLog','err','❌ 401 Unauthorized — token inválido ou expirado!');
+}
+
+async function testNews() {
+  clearLog('connLog');
+  await apiFetch('GET','/noticias?status=all&limit=5',null,'connLog');
+}
+
+async function testPostNoticia(status) {
+  clearLog('newsLog');
+  if (!API_TOKEN || !checkTokenExpiry(API_TOKEN)) {
+    log('newsLog','err','❌ Token inválido/expirado! Use "Renovar Token" primeiro.');
+    return;
+  }
+  const titulo = document.getElementById('test-titulo').value.trim() || 'Notícia Teste';
+  const body = { titulo, title: titulo, status, categoria:'Geral', cat:'Geral',
+    resumo:'Notícia de teste via debug', conteudo:'<p>Teste</p>', autor:'Debug' };
+  log('newsLog','info',`Enviando: ${JSON.stringify(body)}`);
+  const r = await apiFetch('POST','/noticias',body,'newsLog');
+  if (r?.data?.success) {
+    log('newsLog','ok',`✅ SUCESSO! ID: ${r.data.data?.id} — Verifique no phpMyAdmin!`);
+  } else if (r?.status === 401) {
+    log('newsLog','err','❌ 401 — Token expirado. Renove o token abaixo.');
+  } else if (r?.status === 422) {
+    log('newsLog','err',`❌ 422 Validação: ${JSON.stringify(r?.data?.errors)}`);
+  } else {
+    log('newsLog','err',`❌ Falhou: ${r?.data?.message || 'sem resposta'}`);
+  }
+}
+
+async function doLogin() {
+  clearLog('loginLog');
+  const pin = document.getElementById('pin-inp').value;
+  log('loginLog','info',`Fazendo login com PIN ${pin.replace(/./g,'•')}...`);
+  const r = await apiFetch('POST','/auth',{pin},'loginLog');
+  if (r?.data?.success && r.data.data?.token) {
+    API_TOKEN = r.data.data.token;
+    localStorage.setItem('__api_token', API_TOKEN);
+    log('loginLog','ok','✅ Token obtido e salvo! Pode fechar e usar o admin normalmente.');
+    statusRows();
+  } else if (r?.status === 401) {
+    log('loginLog','err','❌ PIN incorreto');
+  } else {
+    log('loginLog','err',`❌ Erro: ${r?.data?.message}`);
+  }
+}
+
+async function rawPost() {
+  clearLog('rawLog');
+  try {
+    const body = JSON.parse(document.getElementById('raw-body').value);
+    await apiFetch('POST', document.getElementById('raw-endpoint').value, body,'rawLog');
+  } catch(e) { log('rawLog','err','JSON inválido: '+e.message); }
+}
+
+async function rawGet() {
+  clearLog('rawLog');
+  await apiFetch('GET', document.getElementById('raw-endpoint').value, null,'rawLog');
+}
+
+function clearToken() {
+  localStorage.removeItem('__api_token');
+  API_TOKEN = '';
+  statusRows();
+  alert('Token removido. Abra o admin e faça login novamente em Conexão API.');
+}
+
+function clearAll() {
+  if (!confirm('Limpar TODO o localStorage? Isso apaga dados locais também!')) return;
+  localStorage.clear();
+  location.reload();
+}
+
+// Init
+statusRows();
+</script>
+</body>
+</html>
