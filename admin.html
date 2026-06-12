@@ -954,7 +954,11 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
           <div class="fr fr2">
             <div class="fg">
               <label>Imagem de fundo (URL)</label>
-              <input class="fi" id="sl-img" type="url" placeholder="https://..." onblur="validateURL(this)">
+              <input class="fi" id="sl-img" type="url" placeholder="https://..."
+                oninput="imgPreview('sl-img','sl-img-prev')"
+                onpaste="setTimeout(()=>imgPreview('sl-img','sl-img-prev'),50)"
+                onblur="validateURL(this);imgPreview('sl-img','sl-img-prev')">
+              <div id="sl-img-prev" style="display:none;margin-top:8px;border-radius:var(--r8);overflow:hidden"></div>
             </div>
             <div class="fg">
               <label>Link do botão</label>
@@ -1110,7 +1114,13 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
             <div class="fg"><label>Dias da semana</label><input class="fi" id="pr-dias" type="text" placeholder="Ex: Seg–Sex ou Diário"></div>
           </div>
           <div class="fr fr2">
-            <div class="fg"><label>Foto do Locutor (URL)</label><input class="fi" id="pr-foto" type="url" placeholder="https://..."></div>
+            <div class="fg">
+              <label>Foto do Locutor (URL)</label>
+              <input class="fi" id="pr-foto" type="url" placeholder="https://..."
+                oninput="imgPreview('pr-foto','pr-foto-prev')"
+                onpaste="setTimeout(()=>imgPreview('pr-foto','pr-foto-prev'),50)">
+              <div id="pr-foto-prev" style="display:none;margin-top:8px;border-radius:var(--r8);overflow:hidden"></div>
+            </div>
             <div class="fg"><label>Descrição breve</label><input class="fi" id="pr-desc" type="text" placeholder="Ex: O melhor começo de dia!"></div>
           </div>
           <button class="btn btn-p" onclick="addProg()"><span class="label"><i class="fas fa-plus"></i>Adicionar Programa</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
@@ -1173,7 +1183,12 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
               <option value="same">→ Estável</option>
               <option value="down">↓ Caindo</option>
             </select>
-            <input class="fi" id="tp-cover" type="url" placeholder="URL capa (opcional)">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <input class="fi" id="tp-cover" type="url" placeholder="URL capa (opcional)"
+                oninput="imgPreview('tp-cover','tp-cover-prev')"
+                onpaste="setTimeout(()=>imgPreview('tp-cover','tp-cover-prev'),50)">
+              <div id="tp-cover-prev" style="display:none;border-radius:var(--r8);overflow:hidden"></div>
+            </div>
           </div>
           <button class="btn btn-p" onclick="addTop()"><span class="label"><i class="fas fa-plus"></i>Adicionar</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
         </div>
@@ -1212,7 +1227,13 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
           <div class="card-title"><i class="fas fa-image"></i>Banner Principal (Módulo)</div>
           <div class="fg"><label>Ativo</label><label class="tsw" style="margin-top:6px"><input type="checkbox" id="pub-ativo" onchange="markUnsaved()"><div class="tsw-track"></div><span class="tsw-label">Exibir banner na página</span></label></div>
           <div class="fr fr2">
-            <div class="fg"><label>Imagem (URL)</label><input class="fi" id="pub-img" type="url" placeholder="https://..." oninput="markUnsaved()"></div>
+            <div class="fg">
+              <label>Imagem (URL)</label>
+              <input class="fi" id="pub-img" type="url" placeholder="https://..."
+                oninput="markUnsaved();imgPreview('pub-img','pub-img-prev')"
+                onpaste="setTimeout(()=>imgPreview('pub-img','pub-img-prev'),50)">
+              <div id="pub-img-prev" style="display:none;margin-top:8px;border-radius:var(--r8);overflow:hidden"></div>
+            </div>
             <div class="fg"><label>Link ao clicar</label><input class="fi" id="pub-link" type="url" placeholder="https://..." oninput="markUnsaved()"></div>
           </div>
           <div class="fg"><label>Texto alternativo (sem imagem)</label><textarea class="fi" id="pub-texto" rows="2" placeholder="Anuncie na Tropical FM 92.7! (69) 3198-0025" oninput="markUnsaved()"></textarea></div>
@@ -1222,7 +1243,13 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
           <div class="card-title"><i class="fas fa-window-restore"></i>Banner Flutuante (Popup)</div>
           <div class="fg"><label>Ativo</label><label class="tsw" style="margin-top:6px"><input type="checkbox" id="pubf-ativo" onchange="markUnsaved()"><div class="tsw-track"></div><span class="tsw-label">Exibir popup após delay</span></label></div>
           <div class="fr fr2">
-            <div class="fg"><label>Imagem</label><input class="fi" id="pubf-img" type="url" placeholder="https://..." oninput="markUnsaved()"></div>
+            <div class="fg">
+              <label>Imagem</label>
+              <input class="fi" id="pubf-img" type="url" placeholder="https://..."
+                oninput="markUnsaved();imgPreview('pubf-img','pubf-img-prev')"
+                onpaste="setTimeout(()=>imgPreview('pubf-img','pubf-img-prev'),50)">
+              <div id="pubf-img-prev" style="display:none;margin-top:8px;border-radius:var(--r8);overflow:hidden"></div>
+            </div>
             <div class="fg"><label>Link</label><input class="fi" id="pubf-link" type="url" placeholder="https://..." oninput="markUnsaved()"></div>
           </div>
           <div class="fr fr2">
@@ -2886,6 +2913,7 @@ function editSlide(id) {
   document.getElementById('sl-title').value = s.title  || s.titulo   || '';
   document.getElementById('sl-sub').value   = s.sub    || s.subtitulo|| '';
   document.getElementById('sl-img').value   = s.img    || s.imagem_url|| '';
+  setTimeout(() => imgPreview('sl-img','sl-img-prev'), 100);
   document.getElementById('sl-tag').value   = s.tag    || 'Destaque';
   document.getElementById('sl-btn').value   = s.btn    || s.btn_texto || '';
   document.getElementById('sl-link').value  = s.link   || s.btn_link  || '';
@@ -2928,6 +2956,7 @@ async function updateSlide(id) {
   if (btn) { btn.innerHTML='<span class="label"><i class="fas fa-plus"></i>Adicionar Slide</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btn.onclick=addSlide; btn.classList.add('btn-p'); btn.classList.remove('btn-g'); }
   ['sl-title','sl-sub','sl-img','sl-tag','sl-btn','sl-link'].forEach(x => document.getElementById(x).value='');
   document.getElementById('sl-active').checked = true;
+  imgPreview('sl-img','sl-img-prev');
   renderSlides(); dSt();
 }
 
@@ -2941,6 +2970,7 @@ function editProg(id) {
   document.getElementById('pr-fim').value    = p.fim   || p.horario_fim  || p.en || '';
   document.getElementById('pr-dias').value   = p.dias  || p.days || '';
   document.getElementById('pr-foto').value   = p.foto_url || p.foto || p.img || '';
+  setTimeout(() => imgPreview('pr-foto','pr-foto-prev'), 100);
   document.getElementById('pr-desc').value   = p.descricao || p.desc || '';
   document.getElementById('pr-nome').scrollIntoView({behavior:'smooth',block:'center'});
   document.getElementById('pr-nome').focus();
@@ -2981,6 +3011,7 @@ function editTop(id, idx) {
   document.getElementById('tp-artist').value = t.artist || t.artista || '';
   document.getElementById('tp-trend').value  = t.trend  || t.tendencia || 'same';
   document.getElementById('tp-cover').value  = t.cover  || t.capa_url  || '';
+  setTimeout(() => imgPreview('tp-cover','tp-cover-prev'), 100);
   document.getElementById('tp-song').scrollIntoView({behavior:'smooth',block:'center'});
   document.getElementById('tp-song').focus();
   const btn = document.querySelector('[onclick="addTop()"]');
@@ -3071,14 +3102,19 @@ async function savePub(tipo) {
 function loadPub() {
   const p = S.get('pub') || {}; const pf = S.get('pubFlutuante') || {};
   document.getElementById('pub-ativo').checked = p.active || false;
-  document.getElementById('pub-img').value = p.img || '';
-  document.getElementById('pub-link').value = p.link || '';
+  document.getElementById('pub-img').value = p.img || p.imagem_url || '';
+  document.getElementById('pub-link').value = p.link || p.link_url || '';
   document.getElementById('pub-texto').value = p.texto || '';
   document.getElementById('pubf-ativo').checked = pf.active || false;
-  document.getElementById('pubf-img').value = pf.img || '';
-  document.getElementById('pubf-link').value = pf.link || '';
+  document.getElementById('pubf-img').value = pf.img || pf.imagem_url || '';
+  document.getElementById('pubf-link').value = pf.link || pf.link_url || '';
   document.getElementById('pubf-texto').value = pf.texto || '';
   document.getElementById('pubf-delay').value = pf.delay || 8;
+  // Mostra preview se tiver imagem salva
+  setTimeout(() => {
+    if (p.img)   imgPreview('pub-img','pub-img-prev');
+    if (pf.img)  imgPreview('pubf-img','pubf-img-prev');
+  }, 100);
 }
 
 // ─── CORES ────────────────────────────────────────────
@@ -3257,6 +3293,25 @@ function previewLogo() {
 }
 
 // ─── IMAGE UPLOAD / PREVIEW ──────────────────────────
+
+// ─── PREVIEW GENÉRICO DE IMAGEM ──────────────────────
+function imgPreview(inputId, previewId) {
+  const input = document.getElementById(inputId);
+  const prev  = document.getElementById(previewId);
+  if (!input || !prev) return;
+  const url = input.value.trim();
+  if (url && !url.startsWith('[')) {
+    prev.innerHTML = `<img src="${url}" alt="Preview"
+      style="width:100%;max-height:140px;object-fit:cover;border-radius:var(--r8);display:block;border:1px solid var(--bd)"
+      onerror="this.parentElement.innerHTML='<div style=\'padding:16px;text-align:center;color:var(--t4);font-size:12px\'><i class=\'fas fa-image\' style=\'font-size:24px;display:block;margin-bottom:6px\'></i>URL inválida ou imagem não encontrada</div>'">`;
+    prev.style.display = '';
+  } else {
+    prev.style.display = 'none';
+    prev.innerHTML = '';
+  }
+}
+
+
 function switchImgTab(tab) {
   const urlBtn  = document.getElementById('img-tab-url');
   const fileBtn = document.getElementById('img-tab-file');
