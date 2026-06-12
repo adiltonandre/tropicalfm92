@@ -44,6 +44,7 @@ textarea.inp{resize:vertical;min-height:80px}
   <div id="statusRows"></div>
   <hr class="sep">
   <button class="btn btn-o" onclick="clearToken()">🗑️ Limpar Token (forçar novo login)</button>
+  <button class="btn btn-b" onclick="clearLocalStorageImages()">🧹 Limpar Base64 do localStorage</button>
   <button class="btn btn-r" onclick="clearAll()">💣 Limpar TUDO</button>
 </div>
 
@@ -242,6 +243,29 @@ function clearToken() {
   API_TOKEN = '';
   statusRows();
   alert('Token removido. Abra o admin e faça login novamente em Conexão API.');
+}
+
+function clearLocalStorageImages() {
+  let freed = 0;
+  const prefix = localStorage.getItem('__adm_prefix') || 'tf6_';
+  ['news','slides'].forEach(key => {
+    const raw = localStorage.getItem(prefix + key);
+    if (!raw) return;
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return;
+      const cleaned = arr.map(item => {
+        const c = {...item};
+        if (c.img && c.img.startsWith('data:')) { freed += c.img.length; c.img = ''; c.imagem_url = ''; }
+        if (c.imagem_url && c.imagem_url.startsWith('data:')) { freed += c.imagem_url.length; c.imagem_url = ''; }
+        if (c.content && c.content.length > 10000) { freed += c.content.length - 1000; c.content = c.content.slice(0,1000)+'...'; }
+        return c;
+      });
+      localStorage.setItem(prefix + key, JSON.stringify(cleaned));
+    } catch(e) {}
+  });
+  statusRows();
+  alert(`Liberado: ~${Math.round(freed/1024)}KB. localStorage limpo de imagens base64.`);
 }
 
 function clearAll() {

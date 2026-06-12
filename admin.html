@@ -612,6 +612,10 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
       <span class="cur" id="tbCrumb">Dashboard</span>
     </div>
     <div class="tb-spacer"></div>
+    <!-- Banner token expirado -->
+    <div id="tokenWarning" style="display:none;align-items:center;gap:7px;background:rgba(232,35,26,.1);border:1px solid rgba(232,35,26,.3);color:var(--r);font-size:11px;font-weight:700;padding:5px 12px;border-radius:var(--r8);cursor:pointer" onclick="goto('api',document.querySelector('.sb-item[onclick*=\\'api\\']'))" title="Clique para reconectar">
+      <i class="fas fa-exclamation-triangle"></i> TOKEN EXPIRADO — Clique para reconectar
+    </div>
     <div class="tb-unsaved" id="unsavedBadge"><i class="fas fa-circle-notch"></i>Alterações não salvas</div>
     <div class="tb-search">
       <i class="fas fa-search"></i>
@@ -1544,7 +1548,50 @@ const Api = {
 let PREFIX = localStorage.getItem('__adm_prefix') || 'tf6_';
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem(PREFIX + k)) } catch { return null } },
-  set: (k, v) => { localStorage.setItem(PREFIX + k, JSON.stringify(v)); logActivity(`Dados "${k}" atualizados`) },
+  set: (k, v) => {
+    try {
+      const str = JSON.stringify(v);
+      // Evita salvar imagens base64 grandes no localStorage
+      if (str.length > 500000) {
+        console.warn(`S.set: valor de "${k}" muito grande (${Math.round(str.length/1024)}KB), salvando versão reduzida`);
+        // Para notícias: salva sem o conteúdo pesado
+        if (Array.isArray(v)) {
+          const light = v.map(item => {
+            const copy = {...item};
+            if (copy.img && copy.img.startsWith('data:')) copy.img = copy.img.slice(0,100)+'...[base64]';
+            if (copy.imagem_url && copy.imagem_url.startsWith('data:')) copy.imagem_url = '...';
+            if (copy.conteudo && copy.conteudo.length > 5000) copy.conteudo = copy.conteudo.slice(0,5000);
+            if (copy.content && copy.content.length > 5000) copy.content = copy.content.slice(0,5000);
+            return copy;
+          });
+          localStorage.setItem(PREFIX + k, JSON.stringify(light));
+        } else {
+          localStorage.setItem(PREFIX + k, str.slice(0, 400000));
+        }
+      } else {
+        localStorage.setItem(PREFIX + k, str);
+      }
+      logActivity(`Dados "${k}" atualizados`);
+    } catch(e) {
+      if (e.name === 'QuotaExceededError') {
+        console.warn('localStorage cheio! Limpando dados antigos...');
+        // Limpa itens grandes para liberar espaço
+        ['news','slides','manualEps'].forEach(key => {
+          const existing = localStorage.getItem(PREFIX + key);
+          if (existing && existing.length > 50000) {
+            try {
+              const arr = JSON.parse(existing);
+              if (Array.isArray(arr) && arr.length > 5) {
+                localStorage.setItem(PREFIX + key, JSON.stringify(arr.slice(0, 5)));
+              }
+            } catch {}
+          }
+        });
+        try { localStorage.setItem(PREFIX + k, JSON.stringify(v).slice(0, 100000)); } catch {}
+        toast('warning', 'Armazenamento local cheio', 'Algumas imagens base64 foram removidas. Use upload via API para imagens maiores.');
+      }
+    }
+  },
   del: k => localStorage.removeItem(PREFIX + k),
   getRaw: k => localStorage.getItem(k),
   setRaw: (k, v) => localStorage.setItem(k, v),
@@ -2194,8 +2241,15 @@ async function saveNews(status) {
     date: new Date().toISOString(),
     id: Date.now(),
   };
-  // Salva local sempre
-  const news = S.get('news') || []; news.unshift(d); S.set('news', news);
+  // Salva local — mas sem base64 pesado (imagens base64 ficam só no banco)
+  const dLocal = {...d};
+  if (dLocal.imagem_url && dLocal.imagem_url.startsWith('data:')) {
+    dLocal.img = '[imagem via upload]'; dLocal.imagem_url = '[imagem via upload]';
+  }
+  if (dLocal.img && dLocal.img.startsWith('data:')) {
+    dLocal.img = '[imagem via upload]'; dLocal.imagem_url = '[imagem via upload]';
+  }
+  const news = S.get('news') || []; news.unshift(dLocal); S.set('news', news);
   // Tenta salvar na API
   if (API_BASE && API_TOKEN) {
     try {
@@ -2251,10 +2305,12 @@ async function delNews(id) {
 }
 function swTab(panel, tab, btn) {
   const p = document.getElementById('p-' + panel);
+  if (!p) return;
   p.querySelectorAll('.tab-pane').forEach(x => x.classList.remove('on'));
   p.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('on'));
-  document.getElementById(panel + '-tp-' + tab).classList.add('on');
-  btn.classList.add('on');
+  const pane = document.getElementById(panel + '-tp-' + tab);
+  if (pane) pane.classList.add('on');
+  if (btn) btn.classList.add('on');
   if (tab === 'list') { renderNewsList(); setTimeout(initQuill, 100); }
   else setTimeout(initQuill, 100);
 }
@@ -2863,6 +2919,7 @@ async function loginApi() {
     if (res.success && res.data?.token) {
       API_TOKEN = res.data.token;
       localStorage.setItem('__api_token', API_TOKEN);
+      document.getElementById('tokenWarning').style.display = 'none';
       msg.className = 'field-msg ok';
       msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token válido por 24h.';
       toast('success', 'Login na API realizado!', 'Agora você pode migrar os dados.');
@@ -3010,6 +3067,26 @@ function initApp() {
   }
 
   initApiPanel();
+  // Verifica se token está expirado e alerta
+  if (API_TOKEN) {
+    try {
+      const parts = API_TOKEN.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload.exp < Math.floor(Date.now()/1000)) {
+          API_TOKEN = '';
+          localStorage.removeItem('__api_token');
+          document.getElementById('tokenWarning').style.display = 'flex';
+          setTimeout(() => {
+            toast('warning', 'Token Expirado', 'Vá em Conexão API → Conectar à API para renovar o acesso ao banco.');
+          }, 2000);
+        }
+      }
+    } catch(e) {}
+  } else if (API_BASE) {
+    // Tem API configurada mas sem token
+    document.getElementById('tokenWarning').style.display = 'flex';
+  }
   logActivity('Painel iniciado');
 }
 
