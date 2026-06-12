@@ -1018,8 +1018,46 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
             </div>
             <div class="fr fr2">
               <div class="fg">
-                <label>Imagem (URL)</label>
-                <input class="fi" id="n-img" type="url" placeholder="https://..." onblur="validateURL(this)">
+                <label>Imagem <span class="hint">URL ou upload de arquivo</span></label>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <!-- Aba URL / Upload -->
+                  <div style="display:flex;gap:0;border:1px solid var(--bd);border-radius:var(--r8);overflow:hidden">
+                    <button type="button" id="img-tab-url" onclick="switchImgTab('url')"
+                      style="flex:1;padding:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:var(--p);color:#fff;border:none;cursor:pointer;transition:.2s">
+                      <i class="fas fa-link"></i> URL
+                    </button>
+                    <button type="button" id="img-tab-file" onclick="switchImgTab('file')"
+                      style="flex:1;padding:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:var(--s1);color:var(--t3);border:none;cursor:pointer;transition:.2s">
+                      <i class="fas fa-upload"></i> Arquivo
+                    </button>
+                  </div>
+                  <!-- URL input -->
+                  <div id="img-panel-url">
+                    <input class="fi" id="n-img" type="url" placeholder="https://..." oninput="previewNewsImg(this.value)">
+                  </div>
+                  <!-- File upload -->
+                  <div id="img-panel-file" style="display:none">
+                    <div id="img-dropzone" onclick="document.getElementById('n-img-file').click()"
+                      style="border:2px dashed var(--bd);border-radius:var(--r8);padding:20px;text-align:center;cursor:pointer;transition:var(--tr);background:var(--s0)"
+                      ondragover="event.preventDefault();this.style.borderColor='var(--p)'"
+                      ondragleave="this.style.borderColor='var(--bd)'"
+                      ondrop="handleImgDrop(event)">
+                      <i class="fas fa-cloud-upload-alt" style="font-size:24px;color:var(--t4);display:block;margin-bottom:8px"></i>
+                      <div style="font-size:13px;font-weight:600;color:var(--t2)">Clique ou arraste a imagem aqui</div>
+                      <div style="font-size:11px;color:var(--t4);margin-top:4px">JPG, PNG, WebP — máx. 5MB</div>
+                    </div>
+                    <input type="file" id="n-img-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleImgFile(this)">
+                    <div id="img-upload-status" style="font-size:12px;margin-top:6px;display:none"></div>
+                  </div>
+                  <!-- Preview -->
+                  <div id="n-img-preview" style="display:none;position:relative;border-radius:var(--r8);overflow:hidden;border:1px solid var(--bd)">
+                    <img id="n-img-preview-img" src="" alt="Preview" style="width:100%;max-height:160px;object-fit:cover;display:block">
+                    <button type="button" onclick="clearNewsImg()"
+                      style="position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="fg">
                 <label>Autor</label>
@@ -2146,20 +2184,37 @@ async function saveNews(status) {
     categoria: document.getElementById('n-cat').value,
     cat: document.getElementById('n-cat').value,
     resumo: document.getElementById('n-resumo').value,
+    exc: document.getElementById('n-resumo').value,
     conteudo: quillEditor ? quillEditor.root.innerHTML : '',
     content: quillEditor ? quillEditor.root.innerHTML : '',
     imagem_url: document.getElementById('n-img').value,
     img: document.getElementById('n-img').value,
     autor: document.getElementById('n-autor').value || 'Redação',
+    author: document.getElementById('n-autor').value || 'Redação',
     date: new Date().toISOString(),
     id: Date.now(),
   };
+  // Salva local sempre
   const news = S.get('news') || []; news.unshift(d); S.set('news', news);
+  // Tenta salvar na API
   if (API_BASE && API_TOKEN) {
-    try { await Api.post('/noticias', d); toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','✅ Salvo no banco'); }
-    catch(e) { toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente'); }
-  } else { toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente'); }
+    try {
+      const res = await Api.post('/noticias', d);
+      if (res.success) {
+        toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','✅ Salvo no banco MySQL');
+      } else {
+        toast('warning', 'Aviso', `Salvo localmente. Banco: ${res.message||'erro desconhecido'}`);
+        console.error('API error:', res);
+      }
+    } catch(e) {
+      toast('warning', 'Salvo localmente', `Erro de conexão: ${e.message}`);
+      console.error('API exception:', e);
+    }
+  } else {
+    toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente');
+  }
   ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('n-img-preview').style.display = 'none';
   if (quillEditor) quillEditor.setContents([]);
   renderNewsList(); dSt(); clearUnsaved();
 }
@@ -2597,6 +2652,100 @@ function previewLogo() {
   const ph = document.getElementById('logoPlaceholder');
   if (url) { img.src = url; img.style.display = 'block'; ph.style.display = 'none'; img.onerror = () => { img.style.display='none'; ph.style.display='block'; }; }
   else { img.style.display = 'none'; ph.style.display = 'block'; }
+}
+
+// ─── IMAGE UPLOAD / PREVIEW ──────────────────────────
+function switchImgTab(tab) {
+  const urlBtn  = document.getElementById('img-tab-url');
+  const fileBtn = document.getElementById('img-tab-file');
+  const urlPanel  = document.getElementById('img-panel-url');
+  const filePanel = document.getElementById('img-panel-file');
+  if (tab === 'url') {
+    urlBtn.style.background = 'var(--p)'; urlBtn.style.color = '#fff';
+    fileBtn.style.background = 'var(--s1)'; fileBtn.style.color = 'var(--t3)';
+    urlPanel.style.display = ''; filePanel.style.display = 'none';
+  } else {
+    fileBtn.style.background = 'var(--p)'; fileBtn.style.color = '#fff';
+    urlBtn.style.background = 'var(--s1)'; urlBtn.style.color = 'var(--t3)';
+    urlPanel.style.display = 'none'; filePanel.style.display = '';
+  }
+}
+
+function previewNewsImg(url) {
+  const prev = document.getElementById('n-img-preview');
+  const img  = document.getElementById('n-img-preview-img');
+  if (url) { img.src = url; prev.style.display = ''; img.onerror = () => { prev.style.display='none'; }; }
+  else { prev.style.display = 'none'; }
+}
+
+function clearNewsImg() {
+  document.getElementById('n-img').value = '';
+  document.getElementById('n-img-preview').style.display = 'none';
+}
+
+function handleImgDrop(e) {
+  e.preventDefault();
+  document.getElementById('img-dropzone').style.borderColor = 'var(--bd)';
+  const file = e.dataTransfer.files[0];
+  if (file) processImgFile(file);
+}
+
+function handleImgFile(input) {
+  const file = input.files[0];
+  if (file) processImgFile(file);
+}
+
+async function processImgFile(file) {
+  const status = document.getElementById('img-upload-status');
+  status.style.display = '';
+
+  // Valida tamanho e tipo
+  if (file.size > 5 * 1024 * 1024) {
+    status.innerHTML = '<span style="color:var(--r)"><i class="fas fa-times-circle"></i> Arquivo muito grande. Máximo 5MB.</span>';
+    return;
+  }
+  if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
+    status.innerHTML = '<span style="color:var(--r)"><i class="fas fa-times-circle"></i> Use JPG, PNG ou WebP.</span>';
+    return;
+  }
+
+  // Se API disponível, faz upload real
+  if (API_BASE && API_TOKEN) {
+    status.innerHTML = '<span style="color:var(--bl)"><i class="fas fa-circle-notch fa-spin"></i> Enviando para o servidor...</span>';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const r = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${API_TOKEN}` },
+        body: formData
+      });
+      const res = await r.json();
+      if (res.success && res.data?.url) {
+        document.getElementById('n-img').value = res.data.url;
+        previewNewsImg(res.data.url);
+        status.innerHTML = `<span style="color:var(--g)"><i class="fas fa-check-circle"></i> Upload OK: <a href="${res.data.url}" target="_blank" style="color:var(--p)">${res.data.name}</a></span>`;
+        switchImgTab('url'); // volta pra aba URL mostrando o link
+        return;
+      } else {
+        throw new Error(res.message || 'Erro no upload');
+      }
+    } catch(e) {
+      status.innerHTML = `<span style="color:var(--am)"><i class="fas fa-exclamation-triangle"></i> Upload falhou (${e.message}). Usando base64 local.</span>`;
+    }
+  }
+
+  // Fallback: converte para base64 (funciona sem servidor)
+  status.innerHTML = '<span style="color:var(--bl)"><i class="fas fa-circle-notch fa-spin"></i> Convertendo imagem...</span>';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64 = e.target.result;
+    document.getElementById('n-img').value = base64;
+    previewNewsImg(base64);
+    status.innerHTML = '<span style="color:var(--am)"><i class="fas fa-info-circle"></i> Imagem convertida para base64 (local). Para upload real, conecte à API.</span>';
+    switchImgTab('url');
+  };
+  reader.readAsDataURL(file);
 }
 
 // ─── UTILS ───────────────────────────────────────────

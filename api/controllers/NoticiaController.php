@@ -7,8 +7,9 @@ class NoticiaController {
         $cat    = $_GET['categoria'] ?? null;
         $limit  = min((int)($_GET['limit'] ?? 20), 100);
         $offset = (int)($_GET['offset'] ?? 0);
+        $search = $_GET['q'] ?? null;
 
-        $where = ['1=1'];
+        $where  = ['1=1'];
         $params = [];
 
         if ($status !== 'all') {
@@ -19,25 +20,29 @@ class NoticiaController {
             $where[] = 'categoria = :cat';
             $params[':cat'] = $cat;
         }
+        if ($search) {
+            $where[] = '(titulo LIKE :q OR resumo LIKE :q)';
+            $params[':q'] = "%{$search}%";
+        }
 
         $whereStr = implode(' AND ', $where);
-        $rows = DB::get()->prepare(
+        $stmt = DB::get()->prepare(
             "SELECT id, titulo, categoria, resumo, imagem_url, autor, status,
                     destaque, visualizacoes, publicado_em, criado_em
              FROM noticias WHERE {$whereStr}
              ORDER BY criado_em DESC LIMIT :lim OFFSET :off"
         );
-        $rows->bindValue(':lim', $limit, PDO::PARAM_INT);
-        $rows->bindValue(':off', $offset, PDO::PARAM_INT);
-        foreach ($params as $k => $v) $rows->bindValue($k, $v);
-        $rows->execute();
+        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+        $stmt->execute();
 
         $total = DB::get()->prepare("SELECT COUNT(*) FROM noticias WHERE {$whereStr}");
         foreach ($params as $k => $v) $total->bindValue($k, $v);
         $total->execute();
 
         Response::ok([
-            'items'  => $rows->fetchAll(),
+            'items'  => $stmt->fetchAll(),
             'total'  => (int) $total->fetchColumn(),
             'limit'  => $limit,
             'offset' => $offset,
@@ -45,24 +50,40 @@ class NoticiaController {
     }
 
     public function show(): void {
-        $row = DB::get()->prepare("SELECT * FROM noticias WHERE id = ?")->execute([$this->id]);
-        $noticia = DB::get()->prepare("SELECT * FROM noticias WHERE id = ?");
-        $noticia->execute([$this->id]);
-        $row = $noticia->fetch();
+        $stmt = DB::get()->prepare("SELECT * FROM noticias WHERE id = ?");
+        $stmt->execute([$this->id]);
+        $row = $stmt->fetch();
         if (!$row) Response::notFound('Notícia');
-        // Incrementa visualizações
         DB::get()->prepare("UPDATE noticias SET visualizacoes = visualizacoes + 1 WHERE id = ?")->execute([$this->id]);
         Response::ok($row);
     }
 
     public function store(): void {
-        Validator::make($this->body)
+        // Aceita tanto campos do admin (titulo/title) quanto do localStorage (title)
+        $b = $this->body;
+
+        // Normaliza: aceita 'titulo' ou 'title'
+        if (empty($b['titulo']) && !empty($b['title'])) $b['titulo'] = $b['title'];
+        // Normaliza: aceita 'categoria' ou 'cat'
+        if (empty($b['categoria']) && !empty($b['cat'])) $b['categoria'] = $b['cat'];
+        // Normaliza: aceita 'conteudo' ou 'content'
+        if (empty($b['conteudo']) && !empty($b['content'])) $b['conteudo'] = $b['content'];
+        // Normaliza: aceita 'imagem_url' ou 'img'
+        if (empty($b['imagem_url']) && !empty($b['img'])) $b['imagem_url'] = $b['img'];
+        // Normaliza: aceita 'autor' ou 'author'
+        if (empty($b['autor']) && !empty($b['author'])) $b['autor'] = $b['author'];
+        // Normaliza: aceita 'resumo' ou 'exc'
+        if (empty($b['resumo']) && !empty($b['exc'])) $b['resumo'] = $b['exc'];
+        // Status padrão
+        if (empty($b['status'])) $b['status'] = 'draft';
+
+        Validator::make($b)
             ->required('titulo', 'Título')
             ->maxLength('titulo', 300, 'Título')
-            ->in('status', ['published','draft'], 'Status')
+            ->in('status', ['published','draft','archived'], 'Status')
             ->validate();
 
-        $d    = Validator::sanitize($this->body);
+        $d    = Validator::sanitize($b);
         $slug = $this->makeSlug($d['titulo']);
 
         $stmt = DB::get()->prepare(
@@ -79,32 +100,37 @@ class NoticiaController {
             ':conteudo' => $d['conteudo']   ?? null,
             ':img'      => $d['imagem_url'] ?? null,
             ':autor'    => $d['autor']      ?? 'Redação',
-            ':status'   => $d['status']     ?? 'draft',
+            ':status'   => $d['status'],
             ':destaque' => (int)($d['destaque'] ?? 0),
             ':pub'      => $d['status'] === 'published' ? date('Y-m-d H:i:s') : null,
         ]);
 
         $id = DB::get()->lastInsertId();
+        $this->log('noticia_criada', "ID {$id}: {$d['titulo']}");
         Response::created(['id' => $id], 'Notícia criada com sucesso.');
     }
 
     public function update(): void {
-        Validator::make($this->body)->required('titulo','Título')->validate();
-        $d = Validator::sanitize($this->body);
+        $b = $this->body;
+        if (empty($b['titulo']) && !empty($b['title'])) $b['titulo'] = $b['title'];
+        Validator::make($b)->required('titulo','Título')->validate();
+        $d = Validator::sanitize($b);
 
         DB::get()->prepare(
             "UPDATE noticias SET titulo=:titulo, categoria=:cat, resumo=:resumo,
              conteudo=:conteudo, imagem_url=:img, autor=:autor, status=:status,
-             destaque=:destaque, publicado_em=IF(:status='published' AND publicado_em IS NULL, NOW(), publicado_em)
+             destaque=:destaque,
+             publicado_em=CASE WHEN :status2='published' AND publicado_em IS NULL THEN NOW() ELSE publicado_em END
              WHERE id=:id"
         )->execute([
             ':titulo'   => $d['titulo'],
-            ':cat'      => $d['categoria']  ?? 'Geral',
-            ':resumo'   => $d['resumo']     ?? null,
-            ':conteudo' => $d['conteudo']   ?? null,
-            ':img'      => $d['imagem_url'] ?? null,
-            ':autor'    => $d['autor']      ?? 'Redação',
-            ':status'   => $d['status']     ?? 'draft',
+            ':cat'      => $d['categoria'] ?? $d['cat'] ?? 'Geral',
+            ':resumo'   => $d['resumo']    ?? null,
+            ':conteudo' => $d['conteudo']  ?? $d['content'] ?? null,
+            ':img'      => $d['imagem_url'] ?? $d['img'] ?? null,
+            ':autor'    => $d['autor']     ?? 'Redação',
+            ':status'   => $d['status']    ?? 'draft',
+            ':status2'  => $d['status']    ?? 'draft',
             ':destaque' => (int)($d['destaque'] ?? 0),
             ':id'       => $this->id,
         ]);
@@ -116,18 +142,24 @@ class NoticiaController {
         $stmt = DB::get()->prepare("DELETE FROM noticias WHERE id = ?");
         $stmt->execute([$this->id]);
         if ($stmt->rowCount() === 0) Response::notFound('Notícia');
+        $this->log('noticia_deletada', "ID {$this->id}");
         Response::ok(null, 'Notícia removida.');
     }
 
     private function makeSlug(string $s): string {
         $s = mb_strtolower($s);
-        $s = preg_replace('/[áàãâä]/u','a',$s);
-        $s = preg_replace('/[éèêë]/u','e',$s);
-        $s = preg_replace('/[íìîï]/u','i',$s);
-        $s = preg_replace('/[óòõôö]/u','o',$s);
-        $s = preg_replace('/[úùûü]/u','u',$s);
-        $s = preg_replace('/[ç]/u','c',$s);
-        $s = preg_replace('/[^a-z0-9]+/','-',$s);
-        return trim($s,'-').'-'.time();
+        $map = ['á'=>'a','à'=>'a','ã'=>'a','â'=>'a','ä'=>'a','é'=>'e','è'=>'e','ê'=>'e','ë'=>'e',
+                'í'=>'i','ì'=>'i','î'=>'i','ï'=>'i','ó'=>'o','ò'=>'o','õ'=>'o','ô'=>'o','ö'=>'o',
+                'ú'=>'u','ù'=>'u','û'=>'u','ü'=>'u','ç'=>'c','ñ'=>'n'];
+        $s = strtr($s, $map);
+        $s = preg_replace('/[^a-z0-9]+/', '-', $s);
+        return trim($s, '-') . '-' . time();
+    }
+
+    private function log(string $acao, string $det = ''): void {
+        try {
+            DB::get()->prepare("INSERT INTO activity_log (acao, detalhes, ip) VALUES (?,?,?)")
+                ->execute([$acao, $det, $_SERVER['REMOTE_ADDR'] ?? '']);
+        } catch (Exception) {}
     }
 }
