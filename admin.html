@@ -2028,21 +2028,38 @@ function logActivity(msg) {
 }
 
 // ─── DASHBOARD ───────────────────────────────────────
-function refreshDashboard() {
-  const news = (S.get('news') || []).filter(n => n.status === 'published');
-  const slides = S.get('slides') || [];
-  const top = S.get('top') || [];
-  const progs = S.get('progs') || [];
-  const live = S.get('live') || {};
+async function refreshDashboard() {
+  // Conta do banco se conectado, senão usa localStorage
+  let nNews = (S.get('news')||[]).filter(n=>n.status==='published').length;
+  let nSlides = (S.get('slides')||[]).length;
+  let nTop = (S.get('top')||[]).length;
+  let nProgs = (S.get('progs')||[]).length;
+  let fonte = 'local';
+
+  if (API_BASE && await ensureToken()) {
+    try {
+      const [rN,rS,rT,rP] = await Promise.all([
+        Api.get('/noticias?status=published&limit=1'),
+        Api.get('/slides'),
+        Api.get('/top'),
+        Api.get('/programas'),
+      ]);
+      if (rN.success) nNews   = rN.data.total ?? rN.data.items?.length ?? nNews;
+      if (rS.success) nSlides = Array.isArray(rS.data) ? rS.data.length : nSlides;
+      if (rT.success) nTop    = Array.isArray(rT.data) ? rT.data.length : nTop;
+      if (rP.success) nProgs  = Array.isArray(rP.data) ? rP.data.length : nProgs;
+      fonte = 'banco';
+    } catch(e) { console.warn('Dashboard API:', e); }
+  }
 
   const stats = [
-    { icon:'fas fa-newspaper', color:'#2550CC', bg:'rgba(37,80,204,.1)', num: news.length, lbl:'Notícias', delta:'' },
-    { icon:'fas fa-images', color:'#0D9E6A', bg:'rgba(13,158,106,.1)', num: slides.length, lbl:'Slides', delta:'' },
-    { icon:'fas fa-music', color:'#D97706', bg:'rgba(217,119,6,.1)', num: top.length + '/10', lbl:'Top Músicas', delta:'' },
-    { icon:'fas fa-th-list', color:'#2563EB', bg:'rgba(37,99,235,.1)', num: progs.length, lbl:'Programas', delta:'' },
+    { icon:'fas fa-newspaper', color:'#2550CC', bg:'rgba(37,80,204,.1)',  num: nNews,           lbl:'Notícias' },
+    { icon:'fas fa-images',    color:'#0D9E6A', bg:'rgba(13,158,106,.1)', num: nSlides,          lbl:'Slides' },
+    { icon:'fas fa-music',     color:'#D97706', bg:'rgba(217,119,6,.1)',  num: nTop+'/10',       lbl:'Top Músicas' },
+    { icon:'fas fa-th-list',   color:'#2563EB', bg:'rgba(37,99,235,.1)', num: nProgs,           lbl:'Programas' },
   ];
   document.getElementById('statsGrid').innerHTML = stats.map(s => `
-    <div class="stat-card">
+    <div class="stat-card" title="Fonte: ${fonte}">
       <div class="stat-icon" style="background:${s.bg}"><i class="${s.icon}" style="color:${s.color};font-size:16px"></i></div>
       <div class="stat-num">${s.num}</div>
       <div class="stat-lbl">${s.lbl}</div>
@@ -2051,16 +2068,16 @@ function refreshDashboard() {
 
   const p = S.get('player') || {};
   document.getElementById('dashPlayer').innerHTML = p.stream
-    ? `<div style="font-size:13px;color:var(--t2);line-height:2"><div><strong>Stream:</strong> <code style="background:var(--s1);padding:2px 7px;border-radius:4px;font-size:12px">${p.stream}</code></div><div><strong>Programa:</strong> ${p.prog || '—'}</div><div><strong>Locutor:</strong> ${p.host || '—'}</div></div>`
+    ? `<div style="font-size:13px;color:var(--t2);line-height:2"><div><strong>Stream:</strong> <code style="background:var(--s1);padding:2px 7px;border-radius:4px;font-size:12px">${p.stream}</code></div><div><strong>Programa:</strong> ${p.prog||'—'}</div><div><strong>Locutor:</strong> ${p.host||'—'}</div></div>`
     : `<div style="font-size:13px;color:var(--t3)"><i class="fas fa-exclamation-circle" style="color:var(--am)"></i> Stream não configurado. <a href="#" onclick="goto('player',null)" style="color:var(--p)">Configurar agora</a></div>`;
 
-  const statusHtml = live.active
-    ? `<div class="live-status on"><div class="pulse"></div>Transmissão AO VIVO ativa</div><div style="margin-top:10px;font-size:12px;color:var(--t3)">${live.titulo || 'Sem título'}</div>`
+  const live = S.get('live') || {};
+  document.getElementById('dashLive').innerHTML = live.active
+    ? `<div class="live-status on"><div class="pulse"></div>Transmissão AO VIVO ativa</div><div style="margin-top:10px;font-size:12px;color:var(--t3)">${live.titulo||'Sem título'}</div>`
     : `<div class="live-status off"><div class="pulse"></div>Offline — sem live ativa</div>`;
-  document.getElementById('dashLive').innerHTML = statusHtml;
 
   const actHtml = activityLog.length
-    ? activityLog.map(a => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--s1);font-size:13px"><span style="color:var(--t4);flex-shrink:0">${a.time}</span><span style="color:var(--t2)">${a.msg}</span></div>`).join('')
+    ? activityLog.map(a=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--s1);font-size:13px"><span style="color:var(--t4);flex-shrink:0">${a.time}</span><span style="color:var(--t2)">${a.msg}</span></div>`).join('')
     : '<div style="color:var(--t4);font-size:13px;padding:10px 0">Nenhuma atividade ainda.</div>';
   document.getElementById('dashActivity').innerHTML = actHtml;
 }
@@ -2416,6 +2433,7 @@ async function renderNewsList(filter = '') {
       <td>
         <div class="act-btns">
           ${n.status==='draft'?`<button class="btn btn-g btn-sm" title="Publicar" onclick="pubNews(${n.id})"><i class="fas fa-check"></i></button>`:''}
+          <button class="btn btn-o btn-sm" title="Editar" onclick="editNews(${n.id})"><i class="fas fa-pen"></i></button>
           <button class="btn btn-r btn-sm" title="Deletar" onclick="confirmAction('Deletar notícia?','Será removida permanentemente.','danger',()=>delNews(${n.id}))"><i class="fas fa-trash"></i></button>
         </div>
       </td>
@@ -2424,6 +2442,211 @@ async function renderNewsList(filter = '') {
 }
 
 function filterNews(v) { renderNewsList(v); }
+
+async function editNews(id) {
+  // Busca notícia do banco ou localStorage
+  let n = null;
+  if (API_BASE && await ensureToken()) {
+    try {
+      const res = await Api.get('/noticias/' + id);
+      if (res.success) n = res.data;
+    } catch(e) {}
+  }
+  if (!n) n = (S.get('news')||[]).find(x => x.id == id);
+  if (!n) { toast('error','Notícia não encontrada',''); return; }
+
+  // Normaliza campos
+  const titulo  = n.titulo || n.title || '';
+  const cat     = n.categoria || n.cat || 'Geral';
+  const resumo  = n.resumo || n.exc || '';
+  const conteudo= n.conteudo || n.content || '';
+  const img     = n.imagem_url || n.img || '';
+  const autor   = n.autor || n.author || 'Redação';
+  const status  = n.status || 'draft';
+
+  // Troca para aba Nova Notícia e preenche os campos
+  await swTab('news', 'new', document.getElementById('tab-news-new'));
+
+  document.getElementById('n-titulo').value = titulo;
+  // Seleciona a categoria
+  const catSel = document.getElementById('n-cat');
+  [...catSel.options].forEach(o => { o.selected = o.value === cat; });
+  document.getElementById('n-resumo').value = resumo;
+  document.getElementById('n-img').value = img;
+  document.getElementById('n-autor').value = autor;
+  if (img) previewNewsImg(img);
+  // Preenche editor Quill
+  setTimeout(() => {
+    if (quillEditor) quillEditor.clipboard.dangerouslyPasteHTML(conteudo);
+  }, 200);
+
+  // Muda botões para modo edição
+  const btnPub  = document.querySelector('[onclick*="saveNews('published')"]');
+  const btnRasc = document.querySelector('[onclick*="saveNews('draft')"]');
+  if (btnPub)  { btnPub.innerHTML  = '<span class="label"><i class="fas fa-save"></i>Salvar Edição</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnPub.onclick = () => updateNews(id, 'published'); }
+  if (btnRasc) { btnRasc.innerHTML = '<span class="label"><i class="fas fa-times"></i>Cancelar</span>'; btnRasc.onclick = () => cancelEdit(); }
+
+  // Destaca o formulário
+  document.getElementById('news-tp-new').querySelector('.card').style.borderColor = 'var(--am)';
+  document.getElementById('news-tp-new').querySelector('.card-title').innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando: ' + titulo.slice(0,40);
+  toast('info', 'Modo edição', 'Edite os campos e clique em "Salvar Edição"');
+
+  // Armazena ID sendo editado
+  window._editingNewsId = id;
+}
+
+async function updateNews(id, status) {
+  const titulo = document.getElementById('n-titulo').value.trim();
+  if (!titulo) { toast('error','Título obrigatório',''); return; }
+  const d = {
+    titulo, title: titulo, status,
+    categoria: document.getElementById('n-cat').value,
+    resumo:    document.getElementById('n-resumo').value,
+    conteudo:  quillEditor ? quillEditor.root.innerHTML : '',
+    imagem_url: document.getElementById('n-img').value,
+    autor:     document.getElementById('n-autor').value || 'Redação',
+  };
+  // Atualiza local
+  const news = S.get('news') || [];
+  const idx  = news.findIndex(n => n.id == id);
+  if (idx >= 0) { news[idx] = {...news[idx], ...d, id}; S.set('news', news); }
+  // Atualiza banco
+  if (API_BASE && await ensureToken()) {
+    try {
+      const res = await Api.put('/noticias/' + id, d);
+      toast(res.success?'success':'warning', 'Notícia atualizada!', res.success?'✅ Salvo no banco':'💾 Local');
+    } catch(e) { toast('success','Notícia atualizada!','💾 Local'); }
+  } else { toast('success','Notícia atualizada!','💾 Local'); }
+  cancelEdit();
+  renderNewsList('');
+}
+
+function cancelEdit() {
+  window._editingNewsId = null;
+  // Restaura botões originais
+  const btnPub  = document.querySelector('[onclick*="updateNews"]') || document.querySelector('.btn-p[onclick*="News"]');
+  const btnRasc = document.querySelector('[onclick*="cancelEdit"]') || document.querySelector('.btn-o[onclick*="News"]');
+  if (btnPub)  { btnPub.innerHTML  = '<span class="label"><i class="fas fa-check"></i>Publicar</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnPub.onclick = () => saveNews('published'); }
+  if (btnRasc) { btnRasc.innerHTML = '<span class="label"><i class="fas fa-clock"></i>Salvar Rascunho</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnRasc.onclick = () => saveNews('draft'); }
+  // Remove destaque
+  const card = document.getElementById('news-tp-new')?.querySelector('.card');
+  if (card) { card.style.borderColor = ''; card.querySelector('.card-title').innerHTML = '<i class="fas fa-pen"></i>Criar Notícia'; }
+  // Limpa campos
+  ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('n-img-preview').style.display = 'none';
+  if (quillEditor) quillEditor.setContents([]);
+  clearUnsaved();
+}
+
+async function editNews(id) {
+  let n = null;
+  if (API_BASE && await ensureToken()) {
+    try { const res = await Api.get('/noticias/'+id); if (res.success) n = res.data; } catch(e){}
+  }
+  if (!n) n = (S.get('news')||[]).find(x=>x.id==id);
+  if (!n) { toast('error','Notícia não encontrada',''); return; }
+
+  const titulo   = n.titulo||n.title||'';
+  const cat      = n.categoria||n.cat||'Geral';
+  const resumo   = n.resumo||n.exc||'';
+  const conteudo = n.conteudo||n.content||'';
+  const img      = n.imagem_url||n.img||'';
+  const autor    = n.autor||n.author||'Redação';
+
+  await swTab('news','new',document.getElementById('tab-news-new'));
+  document.getElementById('n-titulo').value = titulo;
+  const catSel = document.getElementById('n-cat');
+  [...catSel.options].forEach(o => o.selected = o.value===cat);
+  document.getElementById('n-resumo').value = resumo;
+  document.getElementById('n-img').value    = img;
+  document.getElementById('n-autor').value  = autor;
+  if (img) previewNewsImg(img);
+  setTimeout(() => { if (quillEditor) quillEditor.clipboard.dangerouslyPasteHTML(conteudo); }, 250);
+
+  // Destaca card
+  const card = document.getElementById('news-tp-new')?.querySelector('.card');
+  if (card) {
+    card.style.borderColor = 'var(--am)';
+    card.style.borderWidth = '2px';
+    const ct = card.querySelector('.card-title');
+    if (ct) ct.innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando notícia';
+  }
+
+  // Substitui botões temporariamente
+  const area = document.getElementById('news-tp-new');
+  const btnsDiv = area?.querySelector('[style*="display:flex"][style*="gap"]') || area?.querySelector('div:last-child');
+  if (btnsDiv && btnsDiv.querySelector('button')) {
+    btnsDiv.innerHTML = `
+      <button class="btn btn-p" onclick="updateNews(${id},'published')">
+        <span class="label"><i class="fas fa-save"></i>Salvar Edição</span>
+        <span class="spin"><i class="fas fa-circle-notch"></i></span>
+      </button>
+      <button class="btn btn-o" onclick="cancelEdit()">
+        <span class="label"><i class="fas fa-times"></i>Cancelar</span>
+      </button>`;
+  }
+  window._editingNewsId = id;
+  toast('info','Modo edição ativo','Edite e clique em Salvar Edição');
+}
+
+async function updateNews(id, status) {
+  const titulo = document.getElementById('n-titulo').value.trim();
+  if (!titulo) { toast('error','Título obrigatório',''); return; }
+  const d = {
+    titulo, title: titulo, status,
+    categoria:  document.getElementById('n-cat').value,
+    cat:        document.getElementById('n-cat').value,
+    resumo:     document.getElementById('n-resumo').value,
+    conteudo:   quillEditor ? quillEditor.root.innerHTML : '',
+    content:    quillEditor ? quillEditor.root.innerHTML : '',
+    imagem_url: document.getElementById('n-img').value,
+    img:        document.getElementById('n-img').value,
+    autor:      document.getElementById('n-autor').value || 'Redação',
+  };
+  // Local
+  const news = S.get('news')||[];
+  const idx  = news.findIndex(n => n.id==id);
+  if (idx>=0) { news[idx]={...news[idx],...d,id}; S.set('news',news); }
+  // Banco
+  if (API_BASE && await ensureToken()) {
+    try {
+      const res = await Api.put('/noticias/'+id, d);
+      toast(res.success?'success':'warning','Notícia atualizada!',res.success?'✅ Salvo no banco':'💾 Local: '+res.message);
+    } catch(e) { toast('success','Notícia atualizada!','💾 Local'); }
+  } else { toast('success','Notícia atualizada!','💾 Local'); }
+  cancelEdit();
+  await renderNewsList('');
+}
+
+function cancelEdit() {
+  window._editingNewsId = null;
+  const card = document.getElementById('news-tp-new')?.querySelector('.card');
+  if (card) {
+    card.style.borderColor = '';
+    card.style.borderWidth = '';
+    const ct = card.querySelector('.card-title');
+    if (ct) ct.innerHTML = '<i class="fas fa-pen"></i>Criar Notícia';
+  }
+  // Restaura botões
+  const area = document.getElementById('news-tp-new');
+  const btnsDiv = area?.querySelector('[onclick*="updateNews"]')?.parentElement;
+  if (btnsDiv) {
+    btnsDiv.innerHTML = `
+      <button class="btn btn-p" onclick="saveNews('published')">
+        <span class="label"><i class="fas fa-check"></i>Publicar</span>
+        <span class="spin"><i class="fas fa-circle-notch"></i></span>
+      </button>
+      <button class="btn btn-o" onclick="saveNews('draft')">
+        <span class="label"><i class="fas fa-clock"></i>Salvar Rascunho</span>
+        <span class="spin"><i class="fas fa-circle-notch"></i></span>
+      </button>`;
+  }
+  ['n-titulo','n-resumo','n-img','n-autor'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
+  const prev = document.getElementById('n-img-preview');
+  if (prev) prev.style.display='none';
+  if (quillEditor) quillEditor.setContents([]);
+  clearUnsaved();
+}
 
 async function pubNews(id) {
   if (API_BASE && await ensureToken()) {
