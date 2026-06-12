@@ -648,7 +648,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
           <div class="sb-group-label">Conteúdo</div>
           <div class="sb-item" onclick="goto('player',this)"><i class="fas fa-headphones"></i>Player / Stream</div>
           <div class="sb-item" onclick="goto('carousel',this)"><i class="fas fa-images"></i>Carousel / Banners</div>
-          <div class="sb-item" onclick="goto('noticias',this)"><i class="fas fa-newspaper"></i>Notícias</div>
+          <div class="sb-item" onclick="goto('noticias',this);setTimeout(()=>swTab('news','new',document.getElementById('tab-news-new')),50)"><i class="fas fa-newspaper"></i>Notícias</div>
           <div class="sb-item" onclick="goto('programacao',this)"><i class="fas fa-th-list"></i>Programação</div>
           <div class="sb-item" onclick="goto('podcast',this)"><i class="fas fa-video"></i>Frente a Frente</div>
           <div class="sb-item" onclick="goto('top',this)"><i class="fas fa-music"></i>Top Músicas</div>
@@ -989,8 +989,8 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
         <div class="panel-title"><i class="fas fa-newspaper"></i>Notícias</div>
         <div class="panel-sub">Crie e gerencie as notícias do site</div>
         <div class="tabs">
-          <button class="tab-btn on" onclick="swTab('news','new',this)"><i class="fas fa-pen"></i>Nova Notícia</button>
-          <button class="tab-btn" onclick="swTab('news','list',this)"><i class="fas fa-list"></i>Gerenciar</button>
+          <button class="tab-btn on" id="tab-news-new" onclick="swTab('news','new',this)"><i class="fas fa-pen"></i>Nova Notícia</button>
+          <button class="tab-btn" id="tab-news-list" onclick="swTab('news','list',this)"><i class="fas fa-list"></i>Gerenciar</button>
         </div>
         <div class="tab-pane on" id="news-tp-new">
           <div class="card">
@@ -2364,8 +2364,10 @@ async function saveNews(status) {
   renderNewsList(); dSt(); clearUnsaved();
 }
 async function renderNewsList(filter = '') {
+  // Garante que os elementos existem (pode ser chamada antes do painel estar visível)
   const tbody = document.getElementById('newsTbody');
   const count = document.getElementById('newsCount');
+  if (!tbody) { console.warn('renderNewsList: newsTbody não encontrado'); return; }
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t4)"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';
 
   let news = [];
@@ -2450,16 +2452,27 @@ async function delNews(id) {
   renderNewsList(); dSt();
   toast('success', 'Notícia removida', API_TOKEN ? '✅ Removida do banco' : '💾 Removida localmente');
 }
-function swTab(panel, tab, btn) {
+async function swTab(panel, tab, btn) {
+  // Garante que o painel pai está visível primeiro
   const p = document.getElementById('p-' + panel);
   if (!p) return;
+  // Se painel não estiver ativo, ativa ele
+  if (!p.classList.contains('on')) {
+    const sbItem = document.querySelector(`.sb-item[onclick*="'${panel}'"]`);
+    goto(panel, sbItem);
+    await new Promise(r => setTimeout(r, 80));
+  }
   p.querySelectorAll('.tab-pane').forEach(x => x.classList.remove('on'));
   p.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('on'));
   const pane = document.getElementById(panel + '-tp-' + tab);
   if (pane) pane.classList.add('on');
   if (btn) btn.classList.add('on');
-  if (tab === 'list') { renderNewsList(''); setTimeout(initQuill, 100); }
-  else setTimeout(initQuill, 100);
+  if (tab === 'list') {
+    await renderNewsList('');
+    setTimeout(initQuill, 100);
+  } else {
+    setTimeout(initQuill, 100);
+  }
 }
 
 // ─── PROGRAMAÇÃO ──────────────────────────────────────
