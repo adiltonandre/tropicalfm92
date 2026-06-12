@@ -2503,18 +2503,27 @@ async function editNews(id) {
     if (quillEditor) quillEditor.clipboard.dangerouslyPasteHTML(conteudo);
   }, 200);
 
-  // Muda botões para modo edição
-  const btnPub  = document.querySelector('[onclick*="saveNews('published')"]');
-  const btnRasc = document.querySelector('[onclick*="saveNews('draft')"]');
-  if (btnPub)  { btnPub.innerHTML  = '<span class="label"><i class="fas fa-save"></i>Salvar Edição</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnPub.onclick = () => updateNews(id, 'published'); }
-  if (btnRasc) { btnRasc.innerHTML = '<span class="label"><i class="fas fa-times"></i>Cancelar</span>'; btnRasc.onclick = () => cancelEdit(); }
-
-  // Destaca o formulário
-  document.getElementById('news-tp-new').querySelector('.card').style.borderColor = 'var(--am)';
-  document.getElementById('news-tp-new').querySelector('.card-title').innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando: ' + titulo.slice(0,40);
-  toast('info', 'Modo edição', 'Edite os campos e clique em "Salvar Edição"');
-
-  // Armazena ID sendo editado
+  // Destaca card de edição
+  const editCard = document.getElementById('news-tp-new')?.querySelector('.card');
+  if (editCard) {
+    editCard.style.borderColor = 'var(--am)';
+    editCard.style.borderWidth = '2px';
+    const ct = editCard.querySelector('.card-title');
+    if (ct) ct.innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando: ' + titulo.slice(0,50);
+  }
+  // Substitui botões usando IDs
+  const bArea = document.getElementById('news-btn-area');
+  if (bArea) {
+    bArea.innerHTML = `
+      <button class="btn btn-p" onclick="updateNews(${id},'published')">
+        <span class="label"><i class="fas fa-save"></i>Salvar Edição</span>
+        <span class="spin"><i class="fas fa-circle-notch"></i></span>
+      </button>
+      <button class="btn btn-o" onclick="cancelEdit()">
+        <span class="label"><i class="fas fa-times"></i>Cancelar Edição</span>
+      </button>`;
+  }
+  toast('info', 'Modo edição ativo', 'Edite os campos e clique em Salvar Edição');
   window._editingNewsId = id;
 }
 
@@ -2650,11 +2659,10 @@ function cancelEdit() {
     const ct = card.querySelector('.card-title');
     if (ct) ct.innerHTML = '<i class="fas fa-pen"></i>Criar Notícia';
   }
-  // Restaura botões
-  const area = document.getElementById('news-tp-new');
-  const btnsDiv = area?.querySelector('[onclick*="updateNews"]')?.parentElement;
-  if (btnsDiv) {
-    btnsDiv.innerHTML = `
+  // Restaura botões pelo ID
+  const bArea = document.getElementById('news-btn-area');
+  if (bArea) {
+    bArea.innerHTML = `
       <button class="btn btn-p" onclick="saveNews('published')">
         <span class="label"><i class="fas fa-check"></i>Publicar</span>
         <span class="spin"><i class="fas fa-circle-notch"></i></span>

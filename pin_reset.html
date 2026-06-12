@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Reset PIN Local</title>
+<style>
+body{font-family:sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{background:#1e293b;border-radius:12px;padding:32px;text-align:center;max-width:320px;width:90%}
+h2{color:#7dd3fc;margin-bottom:8px}
+p{color:#94a3b8;font-size:13px;margin-bottom:20px;line-height:1.6}
+.btn{display:block;width:100%;padding:12px;border-radius:8px;font-weight:700;font-size:14px;border:none;cursor:pointer;margin-bottom:10px}
+.btn-r{background:#dc2626;color:#fff}.btn-r:hover{background:#b91c1c}
+.btn-b{background:#2550cc;color:#fff}.btn-b:hover{background:#1a3a9e}
+.msg{padding:10px;border-radius:6px;font-size:13px;margin-bottom:12px;display:none}
+.ok{background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3)}
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>🔑 Reset PIN Local</h2>
+  <p>Clique abaixo para resetar o PIN da tela de acesso ao admin.<br>O PIN voltará a ser <strong>1234</strong>.</p>
+  <div class="msg ok" id="msg">✅ PIN resetado! Use <strong>1234</strong> para entrar.</div>
+  <button class="btn btn-r" onclick="resetar()">🗑️ Resetar PIN (voltar para 1234)</button>
+  <a href="/tropicalfm/admin.html" class="btn btn-b" style="text-decoration:none;display:block">→ Abrir Admin</a>
+  <p style="margin-top:12px;font-size:11px;color:#475569">⚠️ Delete este arquivo após usar</p>
+</div>
+<script>
+function resetar() {
+  localStorage.removeItem('__adm_pin');
+  localStorage.removeItem('__adm_cooldown');
+  document.getElementById('msg').style.display = 'block';
+}
+</script>
+</body>
+</html>
