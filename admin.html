@@ -1398,12 +1398,12 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
         <div class="card">
           <div class="card-title"><i class="fas fa-sync-alt"></i>Migrar Dados Locais → Banco</div>
           <p style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:14px">
-            Quando conectar pela primeira vez ao banco, use esta função para migrar todos os dados
-            que você cadastrou offline (notícias, slides, programas, etc.) para o servidor.
+            Sincroniza em <strong>ambas as direções</strong>: envia dados locais ao banco E puxa dados do banco para o local.
+            Notícias, slides, programas, top músicas e enquete.
           </p>
-          <div id="syncResult" style="display:none;margin-bottom:14px;padding:12px;border-radius:var(--r8);font-size:13px"></div>
+          <div id="syncResult" style="display:none;margin-bottom:14px;padding:12px;border-radius:var(--r8);font-size:13px;line-height:1.8"></div>
           <button class="btn btn-g" onclick="syncLocalToApi()" id="btn-sync">
-            <span class="label"><i class="fas fa-cloud-upload-alt"></i>Migrar dados para o banco agora</span>
+            <span class="label"><i class="fas fa-sync-alt"></i>Sincronizar Agora (local ↔ banco)</span>
             <span class="spin"><i class="fas fa-circle-notch"></i></span>
           </button>
         </div>
@@ -3374,31 +3374,189 @@ async function loginApi() {
 }
 
 async function syncLocalToApi() {
-  if (!API_BASE || !API_TOKEN) {
-    toast('warning', 'Configure a API primeiro', 'Salve a URL e faça login antes de sincronizar.');
-    return;
-  }
+  if (!API_BASE) { toast('warning','Configure a API primeiro',''); return; }
+  if (!await ensureToken()) { toast('error','Sem token','Faça login em Conexão API primeiro.'); return; }
+
   btnLoad('btn-sync', true);
   const result = document.getElementById('syncResult');
-  result.style.display = 'block';
-  result.style.background = 'rgba(37,99,235,.06)';
-  result.style.border = '1px solid rgba(37,99,235,.15)';
-  result.style.color = 'var(--bl)';
-  result.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Migrando dados...';
+  const log = (msg, type='info') => {
+    result.style.display = 'block';
+    const colors = { info:'rgba(37,99,235,.06)|rgba(37,99,235,.15)|var(--bl)', ok:'rgba(13,158,106,.06)|rgba(13,158,106,.2)|var(--g)', err:'rgba(232,35,26,.06)|rgba(232,35,26,.2)|var(--r)' };
+    const [bg,bd,cl] = colors[type].split('|');
+    result.style.background=bg; result.style.border=`1px solid ${bd}`; result.style.color=cl;
+    result.innerHTML = msg;
+  };
+
+  log('<i class="fas fa-circle-notch fa-spin"></i> Sincronizando...');
+
+  const stats = { enviados:0, puxados:0, erros:0 };
+  const logLines = [];
+  const addLine = (icon, msg) => logLines.push(`<div>${icon} ${msg}</div>`);
 
   try {
-    const count = await S.syncToApi();
-    result.style.background = 'rgba(13,158,106,.06)';
-    result.style.border = '1px solid rgba(13,158,106,.2)';
-    result.style.color = 'var(--g)';
-    result.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${count} registro(s) migrado(s)</strong> com sucesso para o banco de dados!`;
-    toast('success', 'Sincronização concluída!', `${count} registros enviados ao servidor.`);
-  } catch (e) {
-    result.style.background = 'rgba(232,35,26,.06)';
-    result.style.border = '1px solid rgba(232,35,26,.15)';
-    result.style.color = 'var(--r)';
-    result.innerHTML = '<i class="fas fa-times-circle"></i> Erro durante a migração. Tente novamente.';
-    toast('error', 'Erro na migração', 'Verifique a conexão e o token.');
+    // ── EMPRESA ─────────────────────────────────────────
+    const emp = S.get('empresa');
+    if (emp?.nome) {
+      try { const r = await Api.put('/empresa', emp); if(r.success){stats.enviados++;addLine('✅','Empresa enviada');} } catch(e){stats.erros++;}
+    }
+    // Puxa empresa do banco → atualiza local
+    try {
+      const r = await Api.get('/empresa');
+      if (r.success && r.data?.nome) {
+        S.set('empresa', r.data);
+        document.getElementById('sbRadioName').textContent = r.data.nome;
+        addLine('⬇️','Empresa puxada do banco');
+        stats.puxados++;
+      }
+    } catch(e){}
+
+    // ── NOTÍCIAS: envia locais que não estão no banco ────
+    const newsLocal = (S.get('news')||[]);
+    const newsApiR  = await Api.get('/noticias?status=all&limit=200');
+    const newsApi   = newsApiR.success ? (newsApiR.data?.items||[]) : [];
+    const idsApi    = new Set(newsApi.map(n=>String(n.id)));
+
+    // Envia locais que não existem no banco (IDs timestamp são diferentes de IDs do banco)
+    let newsEnv = 0;
+    for (const n of newsLocal) {
+      if (!idsApi.has(String(n.id))) {
+        try {
+          const r = await Api.post('/noticias', {
+            titulo: n.titulo||n.title, title: n.titulo||n.title,
+            status: n.status||'published', categoria: n.cat||n.categoria||'Geral',
+            resumo: n.resumo||n.exc, conteudo: n.content||n.conteudo,
+            imagem_url: (n.img||n.imagem_url||'').startsWith('data:') ? '' : (n.img||n.imagem_url||''),
+            autor: n.autor||n.author||'Redação',
+          });
+          if (r.success) { newsEnv++; stats.enviados++; }
+        } catch(e){stats.erros++;}
+      }
+    }
+    if (newsEnv) addLine('✅',`${newsEnv} notícia(s) enviada(s) ao banco`);
+
+    // Puxa todas do banco → atualiza local
+    const newsApiAll = await Api.get('/noticias?status=all&limit=200');
+    if (newsApiAll.success) {
+      const norm = (newsApiAll.data?.items||[]).map(n=>({
+        id:n.id, title:n.titulo, titulo:n.titulo, cat:n.categoria, categoria:n.categoria,
+        exc:n.resumo, resumo:n.resumo, content:n.conteudo, conteudo:n.conteudo,
+        img:n.imagem_url, imagem_url:n.imagem_url, autor:n.autor, author:n.autor,
+        status:n.status, date:n.publicado_em||n.criado_em,
+      }));
+      S.set('news', norm);
+      addLine('⬇️',`${norm.length} notícia(s) puxada(s) do banco`);
+      stats.puxados += norm.length;
+    }
+
+    // ── SLIDES ──────────────────────────────────────────
+    const slidesLocal = S.get('slides')||[];
+    const slidesApiR  = await Api.get('/slides');
+    const slidesApi   = slidesApiR.success && Array.isArray(slidesApiR.data) ? slidesApiR.data : [];
+    const slidesIds   = new Set(slidesApi.map(s=>String(s.id)));
+    let   slidesEnv   = 0;
+    for (const s of slidesLocal) {
+      if (!slidesIds.has(String(s.id))) {
+        try {
+          const r = await Api.post('/slides',{
+            titulo:s.titulo||s.title, subtitulo:s.sub||s.subtitulo,
+            imagem_url:(s.img||s.imagem_url||'').startsWith('data:') ? '' : (s.img||s.imagem_url||''),
+            tag:s.tag, btn_texto:s.btn||s.btn_texto, btn_link:s.link||s.btn_link,
+            ativo:s.active!==undefined?(s.active?1:0):(s.ativo!==undefined?s.ativo:1),
+          });
+          if(r.success){slidesEnv++;stats.enviados++;}
+        } catch(e){stats.erros++;}
+      }
+    }
+    if (slidesEnv) addLine('✅',`${slidesEnv} slide(s) enviado(s)`);
+    if (slidesApi.length) {
+      const norm = slidesApi.map(s=>({...s,title:s.titulo,sub:s.subtitulo,img:s.imagem_url,btn:s.btn_texto,link:s.btn_link,active:!!s.ativo}));
+      S.set('slides', norm);
+      addLine('⬇️',`${norm.length} slide(s) puxado(s)`);
+      stats.puxados+=norm.length;
+    }
+
+    // ── PROGRAMAS ────────────────────────────────────────
+    const progsLocal = S.get('progs')||[];
+    const progsApiR  = await Api.get('/programas');
+    const progsApi   = progsApiR.success && Array.isArray(progsApiR.data) ? progsApiR.data : [];
+    const progsIds   = new Set(progsApi.map(p=>String(p.id)));
+    let progsEnv=0;
+    for (const p of progsLocal) {
+      if (!progsIds.has(String(p.id))) {
+        try {
+          const r = await Api.post('/programas',{
+            nome:p.nome, host:p.host||p.locutor,
+            horario_ini:p.inicio||p.horario_ini||p.st,
+            horario_fim:p.fim||p.horario_fim||p.en,
+            dias:p.dias||p.days||'Diário',
+            foto_url:(p.img||p.foto_url||p.foto||'').startsWith('data:') ? '' : (p.img||p.foto_url||p.foto||''),
+            descricao:p.desc||p.descricao,
+          });
+          if(r.success){progsEnv++;stats.enviados++;}
+        } catch(e){stats.erros++;}
+      }
+    }
+    if (progsEnv) addLine('✅',`${progsEnv} programa(s) enviado(s)`);
+    if (progsApi.length) {
+      const norm = progsApi.map(p=>({...p,nome:p.nome,host:p.host,st:p.horario_ini,en:p.horario_fim,img:p.foto_url,desc:p.descricao,dias:p.dias,days:p.dias}));
+      S.set('progs', norm);
+      addLine('⬇️',`${norm.length} programa(s) puxado(s)`);
+      stats.puxados+=norm.length;
+    }
+
+    // ── TOP MÚSICAS ────────────────────────────────────
+    const topLocal = S.get('top')||[];
+    const topApiR  = await Api.get('/top');
+    const topApi   = topApiR.success && Array.isArray(topApiR.data) ? topApiR.data : [];
+    const topIds   = new Set(topApi.map(t=>String(t.id)));
+    let topEnv=0;
+    for (const t of topLocal) {
+      if (!topIds.has(String(t.id)) && topApi.length < 10) {
+        try {
+          const r = await Api.post('/top',{
+            musica:t.song||t.musica, artista:t.artist||t.artista,
+            tendencia:t.trend||t.tendencia||'same',
+            capa_url:(t.cover||t.capa_url||'').startsWith('data:') ? '' : (t.cover||t.capa_url||''),
+          });
+          if(r.success){topEnv++;stats.enviados++;}
+        } catch(e){stats.erros++;}
+      }
+    }
+    if (topEnv) addLine('✅',`${topEnv} música(s) enviada(s)`);
+    if (topApi.length) {
+      const norm = topApi.map(t=>({...t,song:t.musica,artist:t.artista,trend:t.tendencia,cover:t.capa_url}));
+      S.set('top', norm);
+      addLine('⬇️',`${norm.length} música(s) puxada(s)`);
+      stats.puxados+=norm.length;
+    }
+
+    // ── ENQUETE ────────────────────────────────────────
+    const enqLocal = S.get('enquete');
+    if (enqLocal?.q) {
+      try {
+        const r = await Api.post('/enquete',{pergunta:enqLocal.q,opcoes:enqLocal.opts,votes:enqLocal.votes});
+        if(r.success){stats.enviados++;addLine('✅','Enquete enviada');}
+      } catch(e){stats.erros++;}
+    }
+    try {
+      const r = await Api.get('/enquete');
+      if(r.success && r.data?.enquete){
+        const e=r.data; const opts=(e.opcoes||[]).map(o=>o.texto); const votes=(e.opcoes||[]).map(o=>parseInt(o.votos)||0);
+        S.set('enquete',{q:e.enquete.pergunta,opts,votes});
+        addLine('⬇️','Enquete puxada do banco'); stats.puxados++;
+      }
+    } catch(e){}
+
+    // Resultado final
+    const total = stats.enviados + stats.puxados;
+    const resumo = `✅ ${stats.enviados} enviado(s) | ⬇️ ${stats.puxados} puxado(s)${stats.erros?` | ⚠️ ${stats.erros} erro(s)`:''}`;
+    log(`<div style="font-weight:700;margin-bottom:8px">🔄 Sincronização concluída!</div>${logLines.join('')}<div style="margin-top:8px;font-weight:700">${resumo}</div>`, total>0?'ok':'err');
+    toast('success','Sincronização concluída!',resumo);
+    await refreshDashboard();
+
+  } catch(e) {
+    log('<i class="fas fa-times-circle"></i> Erro inesperado: '+e.message, 'err');
+    toast('error','Erro na sincronização',e.message);
   }
   btnLoad('btn-sync', false);
 }
