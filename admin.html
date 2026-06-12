@@ -2091,6 +2091,7 @@ async function saveSection(sec) {
         complemento: document.getElementById('e-comp').value,
       };
       if (!d.nome) { toast('error','Campo obrigatório','Preencha o Nome Fantasia.'); btnLoad(btnId,false); return; }
+      if (API_BASE) await requireToken();
       await apiSave('empresa', d, 'put', '/empresa', d);
       document.getElementById('sbRadioName').textContent = d.nome || 'Tropical FM';
       document.getElementById('sbFreq').textContent = (d.freq || '') + ' — Ao Vivo';
@@ -2217,13 +2218,12 @@ async function addSlide() {
   slides.push(slide);
   S.set('slides', slides);
   // API
-  if (API_BASE && API_TOKEN) {
-    const res = await Api.post('/slides', slide);
-    if (res.success) toast('success','Slide adicionado!','✅ Salvo no banco');
-    else toast('success','Slide adicionado!','💾 Salvo localmente');
-  } else {
-    toast('success','Slide adicionado!','💾 Salvo localmente');
-  }
+  if (API_BASE) {
+    if (await requireToken()) {
+      const res = await Api.post('/slides', slide);
+      toast(res.success?'success':'warning','Slide adicionado!', res.success?'✅ Salvo no banco':'💾 Local: '+res.message);
+    } else { toast('success','Slide adicionado!','💾 Salvo localmente'); }
+  } else { toast('success','Slide adicionado!','💾 Salvo localmente'); }
   renderSlides();
   ['sl-title','sl-sub','sl-img','sl-tag','sl-btn','sl-link'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('sl-active').checked = true;
@@ -2299,19 +2299,49 @@ async function saveNews(status) {
   // Salva na API
   const label = status==='published' ? 'Notícia publicada!' : 'Rascunho salvo!';
   if (!API_BASE) {
-    toast('success', label, '💾 Salvo localmente');
+    toast('success', label, '💾 Salvo localmente (API não configurada)');
   } else {
     const ok = await ensureToken();
     if (!ok) {
-      toast('warning', label, '💾 Local — Token inválido. Reconecte em Conexão API.');
-      document.getElementById('tokenWarning').style.display = 'flex';
+      // Tenta login rápido inline
+      const pinR = prompt('PIN da API para salvar no banco (ou Cancelar para salvar só local):');
+      if (pinR && /^\d{4}$/.test(pinR)) {
+        try {
+          const lr = await fetch(API_BASE+'/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pinR})});
+          const ld = await lr.json();
+          if (ld.success && ld.data?.token) {
+            API_TOKEN = ld.data.token;
+            API_PIN   = btoa(pinR);
+            localStorage.setItem('__api_token', API_TOKEN);
+            localStorage.setItem('__api_pin',   API_PIN);
+            document.getElementById('tokenWarning').style.display = 'none';
+            // Agora salva a notícia
+            const res2 = await Api.post('/noticias', d);
+            if (res2.success) {
+              toast('success', label, '✅ Salvo no banco — ID ' + (res2.data?.id||'?'));
+            } else {
+              toast('warning', label, '💾 Local. ' + (res2.message||'erro'));
+            }
+            return;
+          } else {
+            toast('error', 'PIN incorreto', 'Notícia salva localmente.');
+          }
+        } catch(e) { toast('warning', label, '💾 Local. ' + e.message); }
+      } else {
+        toast('success', label, '💾 Salvo localmente. Reconecte em Conexão API para enviar ao banco.');
+      }
     } else {
       try {
         const res = await Api.post('/noticias', d);
         if (res.success) {
           toast('success', label, '✅ Salvo no banco — ID ' + (res.data?.id||'?'));
+        } else if (res.error === 'unauthorized') {
+          API_TOKEN = ''; API_PIN = '';
+          localStorage.removeItem('__api_token'); localStorage.removeItem('__api_pin');
+          document.getElementById('tokenWarning').style.display = 'flex';
+          toast('error', 'Sessão expirada', 'Reconecte em Conexão API e tente novamente.');
         } else {
-          toast('warning', label, '💾 Local. Erro API: ' + (res.message||'desconhecido'));
+          toast('warning', label, '💾 Local. Erro API: ' + (res.message||JSON.stringify(res.errors||'')));
           console.error('API:', res);
         }
       } catch(e) {
@@ -2385,9 +2415,11 @@ async function addProg() {
     desc: document.getElementById('pr-desc').value,
   };
   const progs = S.get('progs') || []; progs.push(d); S.set('progs', progs); renderProgs();
-  if (API_BASE && API_TOKEN) {
-    try { await Api.post('/programas', d); toast('success','Programa adicionado!','✅ Salvo no banco'); }
-    catch(e) { toast('success','Programa adicionado!','💾 Salvo localmente'); }
+  if (API_BASE) {
+    if (await requireToken()) {
+      try { const r = await Api.post('/programas', d); toast(r.success?'success':'warning','Programa adicionado!',r.success?'✅ Salvo no banco':'💾 '+r.message); }
+      catch(e) { toast('success','Programa adicionado!','💾 Local'); }
+    } else { toast('success','Programa adicionado!','💾 Salvo localmente'); }
   } else { toast('success','Programa adicionado!','💾 Salvo localmente'); }
   ['pr-nome','pr-host','pr-inicio','pr-fim','pr-dias','pr-foto','pr-desc'].forEach(id => document.getElementById(id).value = '');
 }
@@ -2438,10 +2470,12 @@ async function saveLive() {
     live_desc: document.getElementById('lv-desc').value,
   };
   S.set('live', d); clearUnsaved();
-  if (API_BASE && API_TOKEN) {
-    try { await Api.post('/podcast/live', d); toast('success','Live salva!', d.active ? '✅ AO VIVO ativo no banco' : '✅ Offline salvo no banco'); }
-    catch(e) { toast('success','Live salva!','💾 Salvo localmente'); }
-  } else { toast('success','Live salva!', d.active ? '💾 AO VIVO (local)' : '💾 Offline (local)'); }
+  if (API_BASE) {
+    if (await requireToken()) {
+      try { const r = await Api.post('/podcast/live', d); toast(r.success?'success':'warning','Live salva!',r.success?(d.active?'✅ AO VIVO no banco':'✅ Offline no banco'):'💾 '+r.message); }
+      catch(e) { toast('success','Live salva!','💾 Local'); }
+    } else { toast('success','Live salva!','💾 Salvo localmente'); }
+  } else { toast('success','Live salva!','💾 Salvo localmente'); }
 }
 async function addEp() {
   const titulo = document.getElementById('ep-titulo').value.trim();
@@ -2485,10 +2519,12 @@ async function addTop() {
     cover: document.getElementById('tp-cover').value,
     capa_url: document.getElementById('tp-cover').value };
   top.push(d); S.set('top', top); renderTop();
-  if (API_BASE && API_TOKEN) {
-    try { await Api.post('/top', d); toast('success','Música adicionada!','✅ Salvo no banco'); }
-    catch(e) { toast('success','Música adicionada!','💾 Salvo localmente'); }
-  } else { toast('success','Música adicionada!', `${song} — ${artist} 💾`); }
+  if (API_BASE) {
+    if (await requireToken()) {
+      try { const r = await Api.post('/top', d); toast(r.success?'success':'warning','Música adicionada!',r.success?'✅ Salvo no banco':'💾 '+r.message); }
+      catch(e) { toast('success','Música adicionada!','💾 Local'); }
+    } else { toast('success','Música adicionada!','💾 Salvo localmente'); }
+  } else { toast('success','Música adicionada!','💾 Salvo localmente'); }
   ['tp-song','tp-artist','tp-cover'].forEach(id => document.getElementById(id).value = '');
 }
 function renderTop() {
@@ -2522,9 +2558,11 @@ async function saveEnq() {
   if (opts.length < 2) { toast('error','Mínimo 2 opções','Preencha ao menos 2 opções.'); return; }
   const d = { q, pergunta: q, opts, opcoes: opts, votes: new Array(opts.length).fill(0) };
   S.set('enquete', d); S.del('enq_v');
-  if (API_BASE && API_TOKEN) {
-    try { await Api.post('/enquete', d); toast('success','Enquete salva!','✅ Salvo no banco'); }
-    catch(e) { toast('success','Enquete salva!','💾 Salvo localmente'); }
+  if (API_BASE) {
+    if (await requireToken()) {
+      try { const r = await Api.post('/enquete', d); toast(r.success?'success':'warning','Enquete salva!',r.success?'✅ Salvo no banco':'💾 '+r.message); }
+      catch(e) { toast('success','Enquete salva!','💾 Local'); }
+    } else { toast('success','Enquete salva!','💾 Salvo localmente'); }
   } else { toast('success','Enquete salva!','💾 Salvo localmente'); }
   renderEnqStats(); clearUnsaved();
 }
@@ -2860,6 +2898,35 @@ async function processImgFile(file) {
 function fmtDate(d) {
   try { return new Date(d).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' }); }
   catch { return d || ''; }
+}
+
+
+// ─── LOGIN RÁPIDO INLINE ─────────────────────────────
+// Chama quando precisa de token mas não tem — pede PIN e renova
+async function requireToken() {
+  const ok = await ensureToken();
+  if (ok) return true;
+  const pinR = prompt('Token expirado. Digite o PIN da API para continuar:');
+  if (!pinR || !/^\d{4}$/.test(pinR)) return false;
+  try {
+    const r = await fetch(API_BASE+'/auth',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pin:pinR})
+    });
+    const d = await r.json();
+    if (d.success && d.data?.token) {
+      API_TOKEN = d.data.token;
+      API_PIN   = btoa(pinR);
+      localStorage.setItem('__api_token', API_TOKEN);
+      localStorage.setItem('__api_pin',   API_PIN);
+      const w = document.getElementById('tokenWarning');
+      if (w) w.style.display = 'none';
+      return true;
+    }
+  } catch(e) {}
+  toast('error','PIN incorreto','Operação salva apenas localmente.');
+  return false;
 }
 
 // ─── API PANEL ─────────────────────────────────────
