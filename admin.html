@@ -1483,13 +1483,56 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
 // Altere API_BASE para a URL da sua hospedagem quando contratar
 // Exemplo: 'https://tropicalfm.com.br/api'
 // Enquanto for '' ou null → usa localStorage (modo offline)
-let API_BASE = localStorage.getItem('__api_base') || '';
+let API_BASE  = localStorage.getItem('__api_base')  || '';
 let API_TOKEN = localStorage.getItem('__api_token') || '';
+let API_PIN   = localStorage.getItem('__api_pin')   || ''; // PIN criptografado para auto-login
 
 // Corrige https → http para localhost automaticamente
 if (API_BASE.startsWith('https://localhost')) {
   API_BASE = API_BASE.replace('https://localhost', 'http://localhost');
   localStorage.setItem('__api_base', API_BASE);
+}
+
+// Auto-renova token se expirado e temos PIN salvo
+async function autoRenewToken() {
+  if (!API_BASE) return false;
+  // Verifica se token atual ainda é válido
+  if (API_TOKEN) {
+    try {
+      const parts = API_TOKEN.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        if (payload.exp > Math.floor(Date.now()/1000) + 300) {
+          return true; // Token válido por mais de 5 min
+        }
+      }
+    } catch(e) {}
+  }
+  // Token expirado ou ausente — tenta renovar com PIN salvo
+  if (!API_PIN) return false;
+  try {
+    const pin = atob(API_PIN); // decodifica PIN
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(`${API_BASE}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    const data = await r.json();
+    if (data.success && data.data?.token) {
+      API_TOKEN = data.data.token;
+      localStorage.setItem('__api_token', API_TOKEN);
+      document.getElementById('tokenWarning').style.display = 'none';
+      console.log('Token renovado automaticamente');
+      return true;
+    }
+  } catch(e) {
+    console.warn('Auto-renovação falhou:', e.message);
+  }
+  return false;
 }
 
 // ─── API CLIENT ─────────────────────────────────────
@@ -1528,20 +1571,25 @@ const Api = {
   },
 
   async post(path, body) {
+    await autoRenewToken();
     const r = await fetch(`${API_BASE}${path}`, {
       method: 'POST', headers: this.headers(), body: JSON.stringify(body)
     });
+    if (r.status === 401) { await autoRenewToken(); }
     return r.json();
   },
 
   async put(path, body) {
+    await autoRenewToken();
     const r = await fetch(`${API_BASE}${path}`, {
       method: 'PUT', headers: this.headers(), body: JSON.stringify(body)
     });
+    if (r.status === 401) { await autoRenewToken(); }
     return r.json();
   },
 
   async del(path) {
+    await autoRenewToken();
     const r = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers: this.headers() });
     return r.json();
   },
@@ -2258,21 +2306,33 @@ async function saveNews(status) {
   }
   const news = S.get('news') || []; news.unshift(dLocal); S.set('news', news);
   // Tenta salvar na API
-  if (API_BASE && API_TOKEN) {
-    try {
-      const res = await Api.post('/noticias', d);
-      if (res.success) {
-        toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','✅ Salvo no banco MySQL');
-      } else {
-        toast('warning', 'Aviso', `Salvo localmente. Banco: ${res.message||'erro desconhecido'}`);
-        console.error('API error:', res);
+  if (API_BASE) {
+    const renewed = await autoRenewToken();
+    if (!API_TOKEN) {
+      toast('warning', status==='published'?'Notícia publicada!':'Rascunho salvo!',
+        '💾 Local — API sem token. Vá em Conexão API e faça login.');
+    } else {
+      try {
+        const res = await Api.post('/noticias', d);
+        if (res.success) {
+          toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!',
+            `✅ Salvo no banco MySQL — ID: ${res.data?.id || '?'}`);
+        } else if (res.error === 'unauthorized') {
+          API_TOKEN = ''; localStorage.removeItem('__api_token');
+          document.getElementById('tokenWarning').style.display = 'flex';
+          toast('error', 'Token inválido', 'Vá em Conexão API → Conectar à API para renovar.');
+        } else {
+          toast('warning', 'Aviso da API', `💾 Local. Banco: ${res.message||JSON.stringify(res.errors||'')}`);
+          console.error('API error:', res);
+        }
+      } catch(e) {
+        toast('warning', status==='published'?'Notícia publicada!':'Rascunho salvo!',
+          `💾 Local — Erro de rede: ${e.message}`);
+        console.error('API exception:', e);
       }
-    } catch(e) {
-      toast('warning', 'Salvo localmente', `Erro de conexão: ${e.message}`);
-      console.error('API exception:', e);
     }
   } else {
-    toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente');
+    toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente (sem API)');
   }
   ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('n-img-preview').style.display = 'none';
@@ -2926,10 +2986,14 @@ async function loginApi() {
     if (res.success && res.data?.token) {
       API_TOKEN = res.data.token;
       localStorage.setItem('__api_token', API_TOKEN);
+      // Salva PIN codificado para auto-renovação futura
+      const pinVal = document.getElementById('api-pin-input').value;
+      API_PIN = btoa(pinVal);
+      localStorage.setItem('__api_pin', API_PIN);
       document.getElementById('tokenWarning').style.display = 'none';
       msg.className = 'field-msg ok';
-      msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token válido por 24h.';
-      toast('success', 'Login na API realizado!', 'Agora você pode migrar os dados.');
+      msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token renova automaticamente.';
+      toast('success', 'Login na API realizado!', 'Token salvo — renova sozinho ao expirar.');
       updateApiStatus();
     } else {
       msg.className = 'field-msg err';
@@ -3074,25 +3138,23 @@ function initApp() {
   }
 
   initApiPanel();
-  // Verifica se token está expirado e alerta
-  if (API_TOKEN) {
-    try {
-      const parts = API_TOKEN.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        if (payload.exp < Math.floor(Date.now()/1000)) {
-          API_TOKEN = '';
-          localStorage.removeItem('__api_token');
-          document.getElementById('tokenWarning').style.display = 'flex';
-          setTimeout(() => {
-            toast('warning', 'Token Expirado', 'Vá em Conexão API → Conectar à API para renovar o acesso ao banco.');
-          }, 2000);
+  // Verifica token e tenta renovar automaticamente
+  if (API_BASE) {
+    setTimeout(async () => {
+      const ok = await autoRenewToken();
+      if (!ok && API_BASE) {
+        document.getElementById('tokenWarning').style.display = 'flex';
+        if (API_TOKEN) {
+          toast('warning', 'Token Expirado', 'Conectando automaticamente...');
         }
+      } else if (ok) {
+        document.getElementById('tokenWarning').style.display = 'none';
       }
-    } catch(e) {}
-  } else if (API_BASE) {
-    // Tem API configurada mas sem token
-    document.getElementById('tokenWarning').style.display = 'flex';
+    }, 500);
+    // Renova token a cada 23 horas automaticamente
+    setInterval(async () => {
+      await autoRenewToken();
+    }, 23 * 60 * 60 * 1000);
   }
   logActivity('Painel iniciado');
 }
