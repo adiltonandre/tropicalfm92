@@ -1485,7 +1485,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
 // Enquanto for '' ou null → usa localStorage (modo offline)
 let API_BASE  = localStorage.getItem('__api_base')  || '';
 let API_TOKEN = localStorage.getItem('__api_token') || '';
-let API_PIN   = localStorage.getItem('__api_pin')   || ''; // PIN criptografado para auto-login
+let API_PIN   = localStorage.getItem('__api_pin')   || '';
 
 // Corrige https → http para localhost automaticamente
 if (API_BASE.startsWith('https://localhost')) {
@@ -1493,46 +1493,43 @@ if (API_BASE.startsWith('https://localhost')) {
   localStorage.setItem('__api_base', API_BASE);
 }
 
-// Auto-renova token se expirado e temos PIN salvo
+// Verifica se token JWT ainda é válido
+function tokenValido() {
+  if (!API_TOKEN) return false;
+  try {
+    const p = JSON.parse(atob(API_TOKEN.split('.')[1]));
+    return p.exp > Math.floor(Date.now()/1000) + 60;
+  } catch { return false; }
+}
+
+// Renova token usando PIN salvo
 async function autoRenewToken() {
   if (!API_BASE) return false;
-  // Verifica se token atual ainda é válido
-  if (API_TOKEN) {
-    try {
-      const parts = API_TOKEN.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
-        if (payload.exp > Math.floor(Date.now()/1000) + 300) {
-          return true; // Token válido por mais de 5 min
-        }
-      }
-    } catch(e) {}
-  }
-  // Token expirado ou ausente — tenta renovar com PIN salvo
+  if (tokenValido()) return true;
   if (!API_PIN) return false;
   try {
-    const pin = atob(API_PIN); // decodifica PIN
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(`${API_BASE}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
-      signal: ctrl.signal,
+    const pin = atob(API_PIN);
+    const r = await fetch(API_BASE + '/auth', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({pin})
     });
-    clearTimeout(t);
-    const data = await r.json();
-    if (data.success && data.data?.token) {
-      API_TOKEN = data.data.token;
+    const d = await r.json();
+    if (d.success && d.data?.token) {
+      API_TOKEN = d.data.token;
       localStorage.setItem('__api_token', API_TOKEN);
-      document.getElementById('tokenWarning').style.display = 'none';
-      console.log('Token renovado automaticamente');
+      const w = document.getElementById('tokenWarning');
+      if (w) w.style.display = 'none';
       return true;
     }
-  } catch(e) {
-    console.warn('Auto-renovação falhou:', e.message);
-  }
+  } catch(e) { console.warn('autoRenew:', e.message); }
   return false;
+}
+
+// Garante token válido antes de qualquer chamada
+async function ensureToken() {
+  if (tokenValido()) return true;
+  return await autoRenewToken();
 }
 
 // ─── API CLIENT ─────────────────────────────────────
@@ -1571,26 +1568,20 @@ const Api = {
   },
 
   async post(path, body) {
-    await autoRenewToken();
-    const r = await fetch(`${API_BASE}${path}`, {
-      method: 'POST', headers: this.headers(), body: JSON.stringify(body)
-    });
-    if (r.status === 401) { await autoRenewToken(); }
+    await ensureToken();
+    const r = await fetch(API_BASE+path, {method:'POST',headers:this.headers(),body:JSON.stringify(body)});
+    if (r.status===401) { API_TOKEN=''; await autoRenewToken(); }
     return r.json();
   },
-
   async put(path, body) {
-    await autoRenewToken();
-    const r = await fetch(`${API_BASE}${path}`, {
-      method: 'PUT', headers: this.headers(), body: JSON.stringify(body)
-    });
-    if (r.status === 401) { await autoRenewToken(); }
+    await ensureToken();
+    const r = await fetch(API_BASE+path, {method:'PUT',headers:this.headers(),body:JSON.stringify(body)});
+    if (r.status===401) { API_TOKEN=''; await autoRenewToken(); }
     return r.json();
   },
-
   async del(path) {
-    await autoRenewToken();
-    const r = await fetch(`${API_BASE}${path}`, { method: 'DELETE', headers: this.headers() });
+    await ensureToken();
+    const r = await fetch(API_BASE+path, {method:'DELETE',headers:this.headers()});
     return r.json();
   },
 };
@@ -2305,34 +2296,28 @@ async function saveNews(status) {
     dLocal.img = '[imagem via upload]'; dLocal.imagem_url = '[imagem via upload]';
   }
   const news = S.get('news') || []; news.unshift(dLocal); S.set('news', news);
-  // Tenta salvar na API
-  if (API_BASE) {
-    const renewed = await autoRenewToken();
-    if (!API_TOKEN) {
-      toast('warning', status==='published'?'Notícia publicada!':'Rascunho salvo!',
-        '💾 Local — API sem token. Vá em Conexão API e faça login.');
+  // Salva na API
+  const label = status==='published' ? 'Notícia publicada!' : 'Rascunho salvo!';
+  if (!API_BASE) {
+    toast('success', label, '💾 Salvo localmente');
+  } else {
+    const ok = await ensureToken();
+    if (!ok) {
+      toast('warning', label, '💾 Local — Token inválido. Reconecte em Conexão API.');
+      document.getElementById('tokenWarning').style.display = 'flex';
     } else {
       try {
         const res = await Api.post('/noticias', d);
         if (res.success) {
-          toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!',
-            `✅ Salvo no banco MySQL — ID: ${res.data?.id || '?'}`);
-        } else if (res.error === 'unauthorized') {
-          API_TOKEN = ''; localStorage.removeItem('__api_token');
-          document.getElementById('tokenWarning').style.display = 'flex';
-          toast('error', 'Token inválido', 'Vá em Conexão API → Conectar à API para renovar.');
+          toast('success', label, '✅ Salvo no banco — ID ' + (res.data?.id||'?'));
         } else {
-          toast('warning', 'Aviso da API', `💾 Local. Banco: ${res.message||JSON.stringify(res.errors||'')}`);
-          console.error('API error:', res);
+          toast('warning', label, '💾 Local. Erro API: ' + (res.message||'desconhecido'));
+          console.error('API:', res);
         }
       } catch(e) {
-        toast('warning', status==='published'?'Notícia publicada!':'Rascunho salvo!',
-          `💾 Local — Erro de rede: ${e.message}`);
-        console.error('API exception:', e);
+        toast('warning', label, '💾 Local. Rede: ' + e.message);
       }
     }
-  } else {
-    toast('success', status==='published'?'Notícia publicada!':'Rascunho salvo!','💾 Salvo localmente (sem API)');
   }
   ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('n-img-preview').style.display = 'none';
@@ -3138,23 +3123,18 @@ function initApp() {
   }
 
   initApiPanel();
-  // Verifica token e tenta renovar automaticamente
+  // Startup: verifica e renova token
   if (API_BASE) {
     setTimeout(async () => {
-      const ok = await autoRenewToken();
-      if (!ok && API_BASE) {
-        document.getElementById('tokenWarning').style.display = 'flex';
-        if (API_TOKEN) {
-          toast('warning', 'Token Expirado', 'Conectando automaticamente...');
-        }
-      } else if (ok) {
-        document.getElementById('tokenWarning').style.display = 'none';
+      const ok = await ensureToken();
+      const w = document.getElementById('tokenWarning');
+      if (w) w.style.display = ok ? 'none' : 'flex';
+      if (!ok && !API_PIN) {
+        setTimeout(() => toast('warning','Conexão API','Vá em Conexão API → faça login para habilitar o banco.'), 1500);
       }
-    }, 500);
-    // Renova token a cada 23 horas automaticamente
-    setInterval(async () => {
-      await autoRenewToken();
-    }, 23 * 60 * 60 * 1000);
+    }, 800);
+    // Renova a cada 23h
+    setInterval(() => autoRenewToken(), 23*60*60*1000);
   }
   logActivity('Painel iniciado');
 }
