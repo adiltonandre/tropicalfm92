@@ -30,12 +30,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $hash = Auth::hashPin($pin);
 
             // Atualiza na tabela configuracoes
-            $stmt = $db->prepare(
-                "INSERT INTO configuracoes (chave, valor, tipo, descricao)
-                 VALUES ('pin_hash', :h, 'string', 'Hash SHA256 do PIN admin')
-                 ON DUPLICATE KEY UPDATE valor = :h"
-            );
-            $stmt->execute([':h' => $hash]);
+            // Verifica se já existe
+            $exists = $db->prepare("SELECT chave FROM configuracoes WHERE chave = 'pin_hash'");
+            $exists->execute();
+            if ($exists->fetch()) {
+                $db->prepare("UPDATE configuracoes SET valor = ? WHERE chave = 'pin_hash'")
+                   ->execute([$hash]);
+            } else {
+                $db->prepare("INSERT INTO configuracoes (chave, valor, tipo, descricao) VALUES ('pin_hash', ?, 'string', 'Hash SHA256 do PIN admin')")
+                   ->execute([$hash]);
+            }
 
             // Log
             $db->prepare("INSERT INTO activity_log (acao, detalhes, ip) VALUES (?,?,?)")
