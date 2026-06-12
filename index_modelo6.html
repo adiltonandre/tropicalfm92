@@ -1109,13 +1109,12 @@ const S={
   del:k=>localStorage.removeItem(_PFX+k)
 };
 // Busca dados da API se disponível
-const _API = localStorage.getItem('__api_base') || '';
-const _TOK = localStorage.getItem('__api_token') || '';
+let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+
 async function apiGet6(path, fbKey) {
-  if (!_API || !_TOK) return S.get(fbKey);
+  if (!_API_BASE) return S.get(fbKey);
   try {
-    const base = _API.replace('https://localhost','http://localhost');
-    const r = await fetch(base+path, { headers:{'Authorization':'Bearer '+_TOK} });
+    const r = await fetch(_API_BASE + path);
     if (!r.ok) return S.get(fbKey);
     const j = await r.json();
     if (!j.success) return S.get(fbKey);
@@ -1194,10 +1193,13 @@ function closeNM(e){if(e.target.id==='nModal')cNM();}function cNM(){document.get
 async function rProg(){
   const raw=await apiGet6('/programas','progs');
   const progs=(raw||[]).map(p=>({...p,
-    nome:p.nome||p.name, host:p.host,
-    st:p.st||p.horario_ini, en:p.en||p.horario_fim,
-    img:p.img||p.foto_url, desc:p.desc||p.descricao,
-    days:p.days||p.dias,
+    nome: p.nome||p.name,
+    host: p.host||p.locutor||'',
+    st:   p.st  ||p.horario_ini||p.inicio||'',
+    en:   p.en  ||p.horario_fim||p.fim   ||'',
+    img:  p.img ||p.foto_url   ||p.foto  ||'',
+    desc: p.desc||p.descricao  ||'',
+    days: p.days||p.dias       ||'',
   }));const now=new Date();const nm=now.getHours()*60+now.getMinutes();document.getElementById('progGrid').innerHTML=progs.map(p=>{const[sh,sm]=(p.st||'00:00').split(':').map(Number);const[eh,em]=(p.en||'00:00').split(':').map(Number);const on=nm>=sh*60+sm&&nm<eh*60+em;return `<div class="prog-card${on?' on-air':''}"><div class="prog-img">${p.img?`<img src="${p.img}" alt="${p.nome}" onerror="this.style.display='none'">`:'<div style="height:100%;background:var(--cinza-e)"></div>'}<div class="prog-img-ov"></div><div class="prog-time"><i class="fas fa-clock" style="font-size:10px"></i>${p.st}–${p.en}</div></div><div class="prog-body"><div class="prog-nm">${p.nome}</div><div class="prog-host"><i class="fas fa-microphone-alt"></i>${p.host}</div>${p.desc?`<div style="font-size:11px;color:var(--txt3);margin-bottom:8px;line-height:1.45">${p.desc}</div>`:''}<div class="prog-days">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<span class="prog-day ${p.days&&p.days.includes(d)?'on':''}">${d}</span>`).join('')}</div></div></div>`;}).join('');document.getElementById('progModalTable').innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid var(--vermelho)"><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Programa</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Horário</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Locutor</th><th style="text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Dias</th></tr></thead><tbody>${progs.map(p=>`<tr style="border-bottom:1px solid var(--cinza-e)"><td style="padding:12px 10px;font-family:var(--fd);font-size:15px;font-weight:800;color:var(--azul)">${p.nome}</td><td style="padding:12px 10px;color:var(--vermelho);font-family:var(--fd);font-size:14px;font-weight:700">${p.st}–${p.en}</td><td style="padding:12px 10px;color:var(--txt2)">${p.host}</td><td style="padding:12px 10px;color:var(--txt3)">${p.days||'Diário'}</td></tr>`).join('')}</tbody></table>`;}
 function openProgModal(){document.getElementById('progModal').classList.add('open');}
 function closeProgModal(e){if(e.target.id==='progModal')document.getElementById('progModal').classList.remove('open');}
@@ -1213,8 +1215,10 @@ function closeAdf(){document.getElementById('ad-float').classList.remove('on');}
 async function rTop(){
   const raw=await apiGet6('/top','top');
   const top=(raw||[]).map(t=>({...t,
-    song:t.song||t.musica, artist:t.artist||t.artista,
-    trend:t.trend||t.tendencia, cover:t.cover||t.capa_url,
+    song:   t.song  ||t.musica   ||'',
+    artist: t.artist||t.artista  ||'',
+    trend:  t.trend ||t.tendencia||'same',
+    cover:  t.cover ||t.capa_url ||'',
   }));const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};document.getElementById('topGrid').innerHTML=top.map((t,i)=>`<div class="top-item"><div class="top-num ${i===0?'g':i===1?'s':i===2?'b':''}">${i+1}</div><div class="top-cov">${t.cover?`<img src="${t.cover}" alt="${t.song}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-music\'></i>'">`:'<i class="fas fa-music"></i>'}</div><div class="top-info"><div class="top-song">${t.song}</div><div class="top-art">${t.artist}</div></div><div class="top-trend ${t.trend}">${ti[t.trend]||''}</div></div>`).join('');}
 async function rEnq(){
   let e=S.get('enq')||S.get('enquete')||{};

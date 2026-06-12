@@ -1558,11 +1558,77 @@ const CHANNEL_ID="UCE6Lkid4h406OQ2PEp60ocg";
 const CHANNEL_URL="https://www.youtube.com/@FrenteaFrente";
 const STREAM_DEFAULT="http://play.radios.com.br/14864";
 
+// Usa o mesmo prefixo do admin para compartilhar dados
+const PREFIX = localStorage.getItem('__adm_prefix') || 'tf6_';
 const S={
-  get:k=>{try{return JSON.parse(localStorage.getItem('tf5_'+k))}catch{return null}},
-  set:(k,v)=>localStorage.setItem('tf5_'+k,JSON.stringify(v)),
-  del:k=>localStorage.removeItem('tf5_'+k)
+  get:k=>{try{return JSON.parse(localStorage.getItem(PREFIX+k))}catch{return null}},
+  set:(k,v)=>localStorage.setItem(PREFIX+k,JSON.stringify(v)),
+  del:k=>localStorage.removeItem(PREFIX+k)
 };
+
+// API: busca dados do banco se disponível, caso contrário usa localStorage
+// ═══ CAMADA DE API ═══════════════════════════════════
+// Rotas públicas não precisam de token (GET notícias, slides, etc.)
+// Só rotas de escrita precisam de autenticação
+
+let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+let _API_TOK  = localStorage.getItem('__api_token') || '';
+
+// Corrige https→http para localhost
+if (_API_BASE.startsWith('https://localhost')) {
+  _API_BASE = _API_BASE.replace('https://localhost', 'http://localhost');
+}
+
+// Verifica se token JWT ainda é válido
+function _tokenOk() {
+  if (!_API_TOK) return false;
+  try {
+    const p = JSON.parse(atob(_API_TOK.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return p.exp > Math.floor(Date.now()/1000) + 60;
+  } catch { return false; }
+}
+
+// Busca pública da API (sem token — GET de conteúdo)
+async function apiGet(path, fallbackKey) {
+  if (!_API_BASE) return S.get(fallbackKey);
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const r = await fetch(_API_BASE + path, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return S.get(fallbackKey);
+    const j = await r.json();
+    if (!j.success) return S.get(fallbackKey);
+    // Normaliza resposta
+    if (j.data?.items) return j.data.items;
+    if (Array.isArray(j.data)) return j.data;
+    return j.data || S.get(fallbackKey);
+  } catch { return S.get(fallbackKey); }
+}
+
+// Busca empresa/config (público também)
+async function apiGetEmpresa() {
+  if (!_API_BASE) return null;
+  try {
+    const r = await fetch(_API_BASE + '/empresa');
+    const j = await r.json();
+    return j.success ? j.data : null;
+  } catch { return null; }
+}
+
+// Vota na enquete (público — POST sem token)
+async function apiVotar(opcaoId) {
+  if (!_API_BASE) return false;
+  try {
+    const r = await fetch(_API_BASE + '/enquete/votar', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ opcao_id: opcaoId })
+    });
+    const j = await r.json();
+    return j.success;
+  } catch { return false; }
+}
 
 // ═══ DEFAULTS ═══
 function def(){
@@ -1631,7 +1697,26 @@ function tPlay(){
   }
 }
 function setVol(v){aud.volume=v/100;}
-function lPI(){
+async function lPI(){
+  // Puxa dados da empresa da API se disponível
+  if(_API_BASE){
+    try{
+      const r=await fetch(_API_BASE+'/empresa');
+      const j=await r.json();
+      if(j.success&&j.data){
+        const e=j.data;
+        // Atualiza player com dados da empresa
+        const p=S.get('player')||{};
+        if(e.stream_url) p.stream=e.stream_url;
+        S.set('player',p);
+        // Atualiza nome da rádio no cabeçalho
+        if(e.nome){
+          const nm=document.getElementById('radioName');
+          if(nm) nm.textContent=e.nome;
+        }
+      }
+    }catch(e){}
+  }
   const p=S.get('player')||{};
   document.getElementById('pSong').textContent=p.song||'Ao Vivo';
   document.getElementById('pArtist').textContent=p.artist||'Tropical FM 92.7';
@@ -1643,8 +1728,18 @@ function doWa(e){if(e)e.preventDefault();const s=S.get('socials')||{};window.ope
 
 // ═══ CAROUSEL ═══
 let carIdx=0, carTimer=null, carTotal=0;
-function rCarousel(){
-  const slides=S.get('slides')||[];
+async function rCarousel(){
+  let slidesRaw = await apiGet('/slides?ativo=1', 'slides');
+  const slides = (slidesRaw||[]).map(s=>({
+    ...s,
+    title: s.title||s.titulo,
+    sub: s.sub||s.subtitulo,
+    img: s.img||s.imagem_url,
+    tag: s.tag,
+    btn: s.btn||s.btn_texto,
+    link: s.link||s.btn_link,
+    active: s.active!==undefined ? s.active : (s.ativo!==undefined ? !!s.ativo : true),
+  })).filter(s=>s.active||s.ativo);
   if(!slides.length)return;
   carTotal=slides.length;
   const track=document.getElementById('carouselTrack');
@@ -1720,8 +1815,17 @@ function loadClima(){
 }
 
 // ═══ NOTICIAS ═══
-function rNews(){
-  const news=(S.get('news')||[]).filter(n=>n.status==='published');
+async function rNews(){
+  let newsRaw = await apiGet('/noticias?status=published&limit=12', 'news');
+  // normaliza campos API (titulo/titulo) vs localStorage (title)
+  const news = (newsRaw||[]).filter(n=>(n.status==='published'||n.titulo||n.title)).map(n=>({
+    ...n,
+    title: n.title||n.titulo,
+    cat: n.cat||n.categoria,
+    exc: n.exc||n.resumo,
+    img: n.img||n.imagem_url,
+    autor: n.autor||n.author,
+  }));
   const gridEl=document.getElementById('newsGrid');
   if(!news.length){
     gridEl.innerHTML='<div style="padding:40px;color:var(--t3);text-align:center;grid-column:1/-1"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';
@@ -1746,22 +1850,44 @@ function rNews(){
       </div>
     </div>`).join('');
 }
-function oNM(id){
-  const n=(S.get('news')||[]).find(x=>x.id==id);if(!n)return;
-  document.getElementById('nmCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px"></i>${n.cat}`;
-  document.getElementById('nmTitle').textContent=n.title;
-  document.getElementById('nmMeta').innerHTML=`<i class="fas fa-user" style="color:var(--r);margin-right:4px"></i>${n.author} <span style="margin-left:12px"><i class="fas fa-clock" style="color:var(--r);margin-right:4px"></i>${fd(n.date)}</span>`;
-  document.getElementById('nmText').innerHTML=n.content||n.exc||'';
+async function oNM(id){
+  // Tenta local primeiro, depois API
+  let n=(S.get('news')||[]).find(x=>x.id==id);
+  if(!n && _API_BASE) {
+    try {
+      const r=await fetch(_API_BASE+'/noticias/'+id);
+      const j=await r.json();
+      if(j.success && j.data) {
+        const d=j.data;
+        n={id:d.id,title:d.titulo,cat:d.categoria,exc:d.resumo,
+           content:d.conteudo,img:d.imagem_url,author:d.autor,date:d.publicado_em||d.criado_em};
+      }
+    } catch(e){}
+  }
+  if(!n)return;
+  document.getElementById('nmCat').innerHTML=`<i class="fas fa-tag" style="margin-right:5px"></i>${n.cat||n.categoria||'Geral'}`;
+  document.getElementById('nmTitle').textContent=n.title||n.titulo;
+  document.getElementById('nmMeta').innerHTML=`<i class="fas fa-user" style="color:var(--r);margin-right:4px"></i>${n.author||n.autor||'Redação'} <span style="margin-left:12px"><i class="fas fa-clock" style="color:var(--r);margin-right:4px"></i>${fd(n.date)}</span>`;
+  document.getElementById('nmText').innerHTML=n.content||n.conteudo||n.exc||'';
   const img=document.getElementById('nmImg');
-  if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';
+  const imgUrl=n.img||n.imagem_url||'';
+  if(imgUrl){img.src=imgUrl;img.style.display='';}else img.style.display='none';
   document.getElementById('newsModal').classList.add('open');
 }
 function closeNModal(e){if(e.target.id==='newsModal')cNM();}
 function cNM(){document.getElementById('newsModal').classList.remove('open');}
 
 // ═══ PROGRAMAÇÃO ═══
-function rProg(){
-  const progs=S.get('programas')||[];
+async function rProg(){
+  let progsRaw = await apiGet('/programas', 'programas');
+  const progs = (progsRaw||[]).map(p=>({
+    ...p,
+    nome: p.nome||p.name,
+    start: p.start||p.horario_ini,
+    end: p.end||p.horario_fim,
+    img: p.img||p.foto_url||p.foto,
+    desc: p.desc||p.descricao,
+  }));
   const now=new Date();const h=now.getHours();const m=now.getMinutes();
   const nowMin=h*60+m;
   const grid=document.getElementById('progGrid');
@@ -1896,8 +2022,15 @@ function rAdf(){
 function closeAd(){document.getElementById('ad-float').classList.remove('show');}
 
 // ═══ TOP MÚSICAS ═══
-function rTop(){
-  const top=S.get('top')||[];
+async function rTop(){
+  let topRaw = await apiGet('/top', 'top');
+  const top = (topRaw||[]).map(t=>({
+    ...t,
+    song: t.song||t.musica,
+    artist: t.artist||t.artista,
+    trend: t.trend||t.tendencia,
+    cover: t.cover||t.capa_url,
+  }));
   const ti={up:'<i class="fas fa-arrow-up"></i>',down:'<i class="fas fa-arrow-down"></i>',same:'<i class="fas fa-minus"></i>'};
   document.getElementById('topGrid').innerHTML=top.map((t,i)=>`
     <div class="top-item">
@@ -1909,8 +2042,15 @@ function rTop(){
 }
 
 // ═══ ENQUETE ═══
-function rEnquete(){
-  const e=S.get('enquete')||{};
+async function rEnquete(){
+  let apiEnq = await apiGet('/enquete', 'enquete');
+  let e = S.get('enquete')||{};
+  if (apiEnq && apiEnq.enquete) {
+    // formato API: {enquete:{pergunta,...}, opcoes:[{texto,votos},...]}
+    const opts = (apiEnq.opcoes||[]).map(o=>o.texto||o.text);
+    const votes = (apiEnq.opcoes||[]).map(o=>parseInt(o.votos)||0);
+    e = { q: apiEnq.enquete.pergunta, opts, votes };
+  }
   if(!e.q)return;
   document.getElementById('enqTitle').textContent='ENQUETE DA SEMANA';
   document.getElementById('enqQuestion').textContent=e.q;
