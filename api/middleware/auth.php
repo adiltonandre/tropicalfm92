@@ -1,41 +1,54 @@
 <?php
-// ══════════════════════════════════════════════
-//  MIDDLEWARE JWT — autenticação por token
-// ══════════════════════════════════════════════
 class Auth {
 
-    // Gera um JWT simples (sem biblioteca externa)
+    // base64url (sem + / =) — compatível com JS atob após substituição
+    private static function b64url(string $data): string {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    }
+
+    private static function b64urlDecode(string $data): string {
+        $pad = strlen($data) % 4;
+        if ($pad) $data .= str_repeat('=', 4 - $pad);
+        return base64_decode(strtr($data, '-_', '+/'));
+    }
+
+    // Gera JWT com expiração longa (30 dias)
     public static function generateToken(array $payload = []): string {
-        $header  = base64_encode(json_encode(['typ'=>'JWT','alg'=>'HS256']));
+        $header  = self::b64url(json_encode(['typ'=>'JWT','alg'=>'HS256']));
         $payload = array_merge($payload, [
             'iat' => time(),
-            'exp' => time() + 86400, // 24h
+            'exp' => time() + (86400 * 30), // 30 dias
         ]);
-        $payload  = base64_encode(json_encode($payload));
-        $sig      = base64_encode(hash_hmac('sha256', "$header.$payload", JWT_SECRET, true));
+        $payload  = self::b64url(json_encode($payload));
+        $sig      = self::b64url(hash_hmac('sha256', "$header.$payload", JWT_SECRET, true));
         return "$header.$payload.$sig";
     }
 
-    // Valida o token e retorna o payload
+    // Valida JWT
     public static function verifyToken(string $token): ?array {
         $parts = explode('.', $token);
         if (count($parts) !== 3) return null;
         [$header, $payload, $sig] = $parts;
-        $expected = base64_encode(hash_hmac('sha256', "$header.$payload", JWT_SECRET, true));
+        $expected = self::b64url(hash_hmac('sha256', "$header.$payload", JWT_SECRET, true));
         if (!hash_equals($expected, $sig)) return null;
-        $data = json_decode(base64_decode($payload), true);
+        $data = json_decode(self::b64urlDecode($payload), true);
         if (!$data || $data['exp'] < time()) return null;
         return $data;
     }
 
-    // Extrai token do header Authorization: Bearer <token>
+    // Extrai Bearer token
     public static function getBearerToken(): ?string {
         $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+        // Suporte a getallheaders() para Apache
+        if (!$header && function_exists('getallheaders')) {
+            $headers = getallheaders();
+            $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+        }
         if (preg_match('/^Bearer\s+(.+)$/i', $header, $m)) return $m[1];
         return null;
     }
 
-    // Middleware: protege rota — para se não autenticado
+    // Middleware — para se não autenticado
     public static function require(): array {
         $token = self::getBearerToken();
         if (!$token) Response::unauthorized('Token não fornecido.');
@@ -44,15 +57,7 @@ class Auth {
         return $payload;
     }
 
-    // Verifica PIN e retorna token
-    public static function loginWithPin(string $pin): string {
-        if ($pin !== ADMIN_PIN) {
-            Response::error('invalid_pin', 'PIN incorreto.', 401);
-        }
-        return self::generateToken(['role' => 'admin']);
-    }
-
-    // Hash simples para comparação de PINs armazenados
+    // Hash do PIN para armazenamento
     public static function hashPin(string $pin): string {
         return hash_hmac('sha256', $pin, JWT_SECRET);
     }

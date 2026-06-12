@@ -1493,11 +1493,20 @@ if (API_BASE.startsWith('https://localhost')) {
   localStorage.setItem('__api_base', API_BASE);
 }
 
+// base64url → base64 normal
+function b64urlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  try { return atob(str); } catch { return ''; }
+}
+
 // Verifica se token JWT ainda é válido
 function tokenValido() {
   if (!API_TOKEN) return false;
   try {
-    const p = JSON.parse(atob(API_TOKEN.split('.')[1]));
+    const parts = API_TOKEN.split('.');
+    if (parts.length !== 3) return false;
+    const p = JSON.parse(b64urlDecode(parts[1]));
     return p.exp > Math.floor(Date.now()/1000) + 60;
   } catch { return false; }
 }
@@ -1508,7 +1517,7 @@ async function autoRenewToken() {
   if (tokenValido()) return true;
   if (!API_PIN) return false;
   try {
-    const pin = atob(API_PIN);
+    const pin = b64urlDecode(API_PIN) || atob(API_PIN);
     const r = await fetch(API_BASE + '/auth', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -3044,8 +3053,8 @@ async function loginApi() {
       localStorage.setItem('__api_pin', API_PIN);
       document.getElementById('tokenWarning').style.display = 'none';
       msg.className = 'field-msg ok';
-      msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token renova automaticamente.';
-      toast('success', 'Login na API realizado!', 'Token salvo — renova sozinho ao expirar.');
+      msg.innerHTML = '<i class="fas fa-check-circle"></i> Autenticado! Token válido por 30 dias.';
+      toast('success', 'Login na API realizado!', '✅ Token 30 dias — PIN salvo para renovação automática.');
       updateApiStatus();
     } else {
       msg.className = 'field-msg err';
