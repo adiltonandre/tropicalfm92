@@ -596,6 +596,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
     <div class="pin-error" id="pinError"></div>
     <div class="pin-attempts" id="pinAttempts"></div>
     <div class="pin-hint" id="pinHint">PIN padrão: 1234 (altere em Configurações)</div>
+    <button onclick="resetLocalPin()" style="margin-top:14px;background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;text-decoration:underline">Esqueci o PIN local</button>
   </div>
 </div>
 
@@ -1685,6 +1686,21 @@ let pinAttempts = 0;
 const MAX_ATTEMPTS = 5;
 const PIN_COOLDOWN = 30000; // 30s
 
+// Reset do PIN local — abre prompt pedindo confirmação
+function resetLocalPin() {
+  const resp = prompt('Para resetar o PIN local, digite CONFIRMAR:');
+  if (resp !== 'CONFIRMAR') { return; }
+  localStorage.removeItem('__adm_pin');
+  localStorage.removeItem('__adm_cooldown');
+  pinAttempts = 0;
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('pinError').textContent = '';
+  document.getElementById('pinAttempts').textContent = '';
+  document.getElementById('pinHint').textContent = 'PIN resetado! Use 1234 para entrar.';
+  alert('PIN resetado! Use o PIN 1234 para entrar agora.');
+}
+
 function hashPIN(pin) {
   let h = 0;
   for (let i = 0; i < pin.length; i++) {
@@ -1727,6 +1743,13 @@ function updatePinDots(state) {
 }
 
 function checkPIN() {
+  // Verifica cooldown primeiro
+  const cooldown = parseInt(localStorage.getItem('__adm_cooldown') || '0');
+  if (Date.now() < cooldown) {
+    const rem = Math.ceil((cooldown - Date.now()) / 1000);
+    document.getElementById('pinAttempts').textContent = `Aguarde ${rem}s`;
+    pinBuffer = ''; updatePinDots(); return;
+  }
   if (hashPIN(pinBuffer) === getStoredHash()) {
     // Sucesso
     pinAttempts = 0;
