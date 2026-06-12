@@ -2428,7 +2428,8 @@ async function renderNewsList(filter = '') {
           cat:    n.categoria || n.cat || 'Geral',
           status: n.status,
           date:   n.publicado_em || n.criado_em || n.date,
-          autor:  n.autor,
+          autor:  n.autor || n.author || 'Redação',
+          img:    n.imagem_url || n.img || '',
         }));
       }
     } catch(e) { console.warn('API list error:', e); }
@@ -2440,11 +2441,12 @@ async function renderNewsList(filter = '') {
       !filter || (n.title||n.titulo||'').toLowerCase().includes(filter.toLowerCase())
     ).map(n => ({
       id:     n.id,
-      title:  n.title || n.titulo,
-      cat:    n.cat   || n.categoria || 'Geral',
+      title:  n.title    || n.titulo,
+      cat:    n.cat      || n.categoria || 'Geral',
       status: n.status,
-      date:   n.date  || n.criado_em,
-      autor:  n.autor || n.author,
+      date:   n.date     || n.criado_em,
+      autor:  n.autor    || n.author    || 'Redação',
+      img:    n.imagem_url|| n.img      || '',
     }));
   }
 
