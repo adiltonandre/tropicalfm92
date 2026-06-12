@@ -882,14 +882,15 @@ const LIVE_EMBED=`https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID
 const S={get:k=>{try{return JSON.parse(localStorage.getItem('tf927_'+k))}catch(e){return null}},set:(k,v)=>localStorage.setItem('tf927_'+k,JSON.stringify(v)),del:k=>localStorage.removeItem('tf927_'+k)};
 
 // ═══ API SYNC ═══
-let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+function getApiBase(){return(localStorage.getItem('__api_base')||'').replace('https://localhost','http://localhost');}
 
 async function apiGet(path, fbKey) {
-  if (!_API_BASE) return S.get(fbKey);
+  const base = getApiBase();
+  if (!base) return S.get(fbKey);
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(_API_BASE + path, { signal: ctrl.signal });
+    const r = await fetch(base + path, { signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return S.get(fbKey);
     const j = await r.json();
@@ -897,7 +898,10 @@ async function apiGet(path, fbKey) {
     if (j.data?.items) return j.data.items;
     if (Array.isArray(j.data)) return j.data;
     return j.data || S.get(fbKey);
-  } catch { return S.get(fbKey); }
+  } catch(e) {
+    console.warn('apiGet:', path, e.message);
+    return S.get(fbKey);
+  }
 }
 
 function def(){

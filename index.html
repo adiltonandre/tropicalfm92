@@ -1571,7 +1571,7 @@ const S={
 // Rotas públicas não precisam de token (GET notícias, slides, etc.)
 // Só rotas de escrita precisam de autenticação
 
-let _API_BASE = (localStorage.getItem('__api_base') || '').replace('https://localhost','http://localhost');
+function getApiBase(){return(localStorage.getItem('__api_base')||'').replace('https://localhost','http://localhost');}
 let _API_TOK  = localStorage.getItem('__api_token') || '';
 
 // Corrige https→http para localhost
@@ -1590,11 +1590,12 @@ function _tokenOk() {
 
 // Busca pública da API (sem token — GET de conteúdo)
 async function apiGet(path, fallbackKey) {
-  if (!_API_BASE) return S.get(fallbackKey);
+  const base = getApiBase();
+  if (!base) return S.get(fallbackKey);
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
-    const r = await fetch(_API_BASE + path, { signal: ctrl.signal });
+    const r = await fetch(base + path, { signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return S.get(fallbackKey);
     const j = await r.json();

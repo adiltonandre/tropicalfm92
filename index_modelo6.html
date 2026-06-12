@@ -1125,6 +1125,8 @@ async function apiGet6(path, fbKey) {
 }
 
 function def(){
+  // Se há API configurada, não precisa de dados padrão — a API vai prover
+  const hasApi = !!(localStorage.getItem('__api_base') || '').trim();
   if(!S.get('p'))S.set('p',{stream:STREAM,name:'Tropical FM 92.7',freq:'92.7 MHz',song:'Ao Vivo',artist:'Tropical FM 92.7',prog:'Manhã Tropical',host:'Pres. Médici, RO'});
   if(!S.get('slides'))S.set('slides',[
     {id:1,title:'TROPICAL FM 92.7',sub:'A rádio que é um amor — em qualquer hora, em qualquer lugar!',img:'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=1400&q=80',tag:'Ao Vivo',btn:'Ouvir Agora',link:'#'},
