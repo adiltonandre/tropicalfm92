@@ -2449,10 +2449,18 @@ async function renderNewsList(filter = '') {
 
   tbody.innerHTML = news.map(n => `
     <tr>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--t1)">${n.title||'(sem título)'}</td>
+      <td style="min-width:280px">
+        <div style="display:flex;align-items:center;gap:10px">
+          ${n.img && !n.img.startsWith('[') ? `<img src="${n.img}" alt="" style="width:48px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;border:1px solid var(--bd)" onerror="this.style.display='none'">` : `<div style="width:48px;height:36px;border-radius:4px;background:var(--s1);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-image" style="color:var(--t4);font-size:12px"></i></div>`}
+          <div style="min-width:0">
+            <div style="font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${n.title||'(sem título)'}</div>
+            ${n.autor ? `<div style="font-size:11px;color:var(--t4)">${n.autor}</div>` : ''}
+          </div>
+        </div>
+      </td>
       <td><span class="badge badge-p">${n.cat}</span></td>
       <td><span class="badge ${n.status==='published'?'badge-g':'badge-a'}">${n.status==='published'?'Publicado':'Rascunho'}</span></td>
-      <td style="white-space:nowrap">${fmtDate(n.date)}</td>
+      <td style="white-space:nowrap;font-size:12px;color:var(--t3)">${fmtDate(n.date)}</td>
       <td>
         <div class="act-btns">
           ${n.status==='draft'?`<button class="btn btn-g btn-sm" title="Publicar" onclick="pubNews(${n.id})"><i class="fas fa-check"></i></button>`:''}
@@ -2461,57 +2469,63 @@ async function renderNewsList(filter = '') {
         </div>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t4);padding:20px">Nenhuma notícia cadastrada</td></tr>';
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t4);padding:24px"><i class="fas fa-newspaper" style="font-size:28px;display:block;margin-bottom:8px;opacity:.3"></i>Nenhuma notícia cadastrada</td></tr>';
 }
 
 function filterNews(v) { renderNewsList(v); }
 
 async function editNews(id) {
-  // Busca notícia do banco ou localStorage
+  // Busca a notícia
   let n = null;
   if (API_BASE && await ensureToken()) {
     try {
       const res = await Api.get('/noticias/' + id);
-      if (res.success) n = res.data;
+      if (res.success && res.data) n = res.data;
     } catch(e) {}
   }
-  if (!n) n = (S.get('news')||[]).find(x => x.id == id);
-  if (!n) { toast('error','Notícia não encontrada',''); return; }
+  if (!n) n = (S.get('news')||[]).find(x => String(x.id) === String(id));
+  if (!n) { toast('error','Notícia não encontrada','ID: ' + id); return; }
 
-  // Normaliza campos
-  const titulo  = n.titulo || n.title || '';
-  const cat     = n.categoria || n.cat || 'Geral';
-  const resumo  = n.resumo || n.exc || '';
-  const conteudo= n.conteudo || n.content || '';
-  const img     = n.imagem_url || n.img || '';
-  const autor   = n.autor || n.author || 'Redação';
-  const status  = n.status || 'draft';
+  // Normaliza campos (API usa nomes diferentes do localStorage)
+  const titulo   = n.titulo   || n.title   || '';
+  const cat      = n.categoria|| n.cat     || 'Geral';
+  const resumo   = n.resumo   || n.exc     || '';
+  const conteudo = n.conteudo || n.content || '';
+  const img      = n.imagem_url|| n.img    || '';
+  const autor    = n.autor    || n.author  || 'Redação';
 
-  // Troca para aba Nova Notícia e preenche os campos
+  // Vai para aba Nova Notícia
   await swTab('news', 'new', document.getElementById('tab-news-new'));
+  await new Promise(r => setTimeout(r, 100));
 
+  // Preenche campos
   document.getElementById('n-titulo').value = titulo;
-  // Seleciona a categoria
-  const catSel = document.getElementById('n-cat');
-  [...catSel.options].forEach(o => { o.selected = o.value === cat; });
   document.getElementById('n-resumo').value = resumo;
-  document.getElementById('n-img').value = img;
-  document.getElementById('n-autor').value = autor;
-  if (img) previewNewsImg(img);
-  // Preenche editor Quill
-  setTimeout(() => {
-    if (quillEditor) quillEditor.clipboard.dangerouslyPasteHTML(conteudo);
-  }, 200);
+  document.getElementById('n-autor').value  = autor;
+  document.getElementById('n-img').value    = img.startsWith('[') ? '' : img;
+  if (img && !img.startsWith('[')) previewNewsImg(img);
 
-  // Destaca card de edição
+  // Seleciona categoria
+  const catSel = document.getElementById('n-cat');
+  if (catSel) [...catSel.options].forEach(o => o.selected = o.value === cat || o.text === cat);
+
+  // Preenche Quill
+  setTimeout(() => {
+    if (quillEditor && conteudo) {
+      quillEditor.clipboard.dangerouslyPasteHTML(conteudo);
+    }
+  }, 300);
+
+  // Destaca card
   const editCard = document.getElementById('news-tp-new')?.querySelector('.card');
   if (editCard) {
     editCard.style.borderColor = 'var(--am)';
     editCard.style.borderWidth = '2px';
     const ct = editCard.querySelector('.card-title');
-    if (ct) ct.innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando: ' + titulo.slice(0,50);
+    if (ct) ct.innerHTML = `<i class="fas fa-pen" style="color:var(--am)"></i> Editando: ${titulo.slice(0,40)||'notícia'}`;
   }
-  // Substitui botões usando IDs
+
+  // Troca botões pelo ID
   const bArea = document.getElementById('news-btn-area');
   if (bArea) {
     bArea.innerHTML = `
@@ -2520,105 +2534,12 @@ async function editNews(id) {
         <span class="spin"><i class="fas fa-circle-notch"></i></span>
       </button>
       <button class="btn btn-o" onclick="cancelEdit()">
-        <span class="label"><i class="fas fa-times"></i>Cancelar Edição</span>
-      </button>`;
-  }
-  toast('info', 'Modo edição ativo', 'Edite os campos e clique em Salvar Edição');
-  window._editingNewsId = id;
-}
-
-async function updateNews(id, status) {
-  const titulo = document.getElementById('n-titulo').value.trim();
-  if (!titulo) { toast('error','Título obrigatório',''); return; }
-  const d = {
-    titulo, title: titulo, status,
-    categoria: document.getElementById('n-cat').value,
-    resumo:    document.getElementById('n-resumo').value,
-    conteudo:  quillEditor ? quillEditor.root.innerHTML : '',
-    imagem_url: document.getElementById('n-img').value,
-    autor:     document.getElementById('n-autor').value || 'Redação',
-  };
-  // Atualiza local
-  const news = S.get('news') || [];
-  const idx  = news.findIndex(n => n.id == id);
-  if (idx >= 0) { news[idx] = {...news[idx], ...d, id}; S.set('news', news); }
-  // Atualiza banco
-  if (API_BASE && await ensureToken()) {
-    try {
-      const res = await Api.put('/noticias/' + id, d);
-      toast(res.success?'success':'warning', 'Notícia atualizada!', res.success?'✅ Salvo no banco':'💾 Local');
-    } catch(e) { toast('success','Notícia atualizada!','💾 Local'); }
-  } else { toast('success','Notícia atualizada!','💾 Local'); }
-  cancelEdit();
-  renderNewsList('');
-}
-
-function cancelEdit() {
-  window._editingNewsId = null;
-  // Restaura botões originais
-  const btnPub  = document.querySelector('[onclick*="updateNews"]') || document.querySelector('.btn-p[onclick*="News"]');
-  const btnRasc = document.querySelector('[onclick*="cancelEdit"]') || document.querySelector('.btn-o[onclick*="News"]');
-  if (btnPub)  { btnPub.innerHTML  = '<span class="label"><i class="fas fa-check"></i>Publicar</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnPub.onclick = () => saveNews('published'); }
-  if (btnRasc) { btnRasc.innerHTML = '<span class="label"><i class="fas fa-clock"></i>Salvar Rascunho</span><span class="spin"><i class="fas fa-circle-notch"></i></span>'; btnRasc.onclick = () => saveNews('draft'); }
-  // Remove destaque
-  const card = document.getElementById('news-tp-new')?.querySelector('.card');
-  if (card) { card.style.borderColor = ''; card.querySelector('.card-title').innerHTML = '<i class="fas fa-pen"></i>Criar Notícia'; }
-  // Limpa campos
-  ['n-titulo','n-resumo','n-img','n-autor'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('n-img-preview').style.display = 'none';
-  if (quillEditor) quillEditor.setContents([]);
-  clearUnsaved();
-}
-
-async function editNews(id) {
-  let n = null;
-  if (API_BASE && await ensureToken()) {
-    try { const res = await Api.get('/noticias/'+id); if (res.success) n = res.data; } catch(e){}
-  }
-  if (!n) n = (S.get('news')||[]).find(x=>x.id==id);
-  if (!n) { toast('error','Notícia não encontrada',''); return; }
-
-  const titulo   = n.titulo||n.title||'';
-  const cat      = n.categoria||n.cat||'Geral';
-  const resumo   = n.resumo||n.exc||'';
-  const conteudo = n.conteudo||n.content||'';
-  const img      = n.imagem_url||n.img||'';
-  const autor    = n.autor||n.author||'Redação';
-
-  await swTab('news','new',document.getElementById('tab-news-new'));
-  document.getElementById('n-titulo').value = titulo;
-  const catSel = document.getElementById('n-cat');
-  [...catSel.options].forEach(o => o.selected = o.value===cat);
-  document.getElementById('n-resumo').value = resumo;
-  document.getElementById('n-img').value    = img;
-  document.getElementById('n-autor').value  = autor;
-  if (img) previewNewsImg(img);
-  setTimeout(() => { if (quillEditor) quillEditor.clipboard.dangerouslyPasteHTML(conteudo); }, 250);
-
-  // Destaca card
-  const card = document.getElementById('news-tp-new')?.querySelector('.card');
-  if (card) {
-    card.style.borderColor = 'var(--am)';
-    card.style.borderWidth = '2px';
-    const ct = card.querySelector('.card-title');
-    if (ct) ct.innerHTML = '<i class="fas fa-pen" style="color:var(--am)"></i> Editando notícia';
-  }
-
-  // Substitui botões temporariamente
-  const area = document.getElementById('news-tp-new');
-  const btnsDiv = area?.querySelector('[style*="display:flex"][style*="gap"]') || area?.querySelector('div:last-child');
-  if (btnsDiv && btnsDiv.querySelector('button')) {
-    btnsDiv.innerHTML = `
-      <button class="btn btn-p" onclick="updateNews(${id},'published')">
-        <span class="label"><i class="fas fa-save"></i>Salvar Edição</span>
-        <span class="spin"><i class="fas fa-circle-notch"></i></span>
-      </button>
-      <button class="btn btn-o" onclick="cancelEdit()">
         <span class="label"><i class="fas fa-times"></i>Cancelar</span>
       </button>`;
   }
+
   window._editingNewsId = id;
-  toast('info','Modo edição ativo','Edite e clique em Salvar Edição');
+  toast('info', 'Editando notícia', titulo.slice(0,50) || 'Preencha e salve.');
 }
 
 async function updateNews(id, status) {
