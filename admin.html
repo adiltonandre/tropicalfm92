@@ -1038,7 +1038,10 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
                   </div>
                   <!-- URL input -->
                   <div id="img-panel-url">
-                    <input class="fi" id="n-img" type="url" placeholder="https://..." oninput="previewNewsImg(this.value)">
+                    <input class="fi" id="n-img" type="url" placeholder="https://..." 
+                      oninput="previewNewsImg(this.value)" 
+                      onpaste="setTimeout(()=>previewNewsImg(this.value),50)"
+                      onblur="previewNewsImg(this.value)">
                   </div>
                   <!-- File upload -->
                   <div id="img-panel-file" style="display:none">
@@ -1069,9 +1072,9 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
                 <input class="fi" id="n-autor" type="text" placeholder="Ex: Redação">
               </div>
             </div>
-            <div style="display:flex;gap:10px">
-              <button class="btn btn-p" onclick="saveNews('published')"><span class="label"><i class="fas fa-check"></i>Publicar</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
-              <button class="btn btn-o" onclick="saveNews('draft')"><span class="label"><i class="fas fa-clock"></i>Salvar Rascunho</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
+            <div style="display:flex;gap:10px" id="news-btn-area">
+              <button class="btn btn-p" id="btn-news-pub" onclick="saveNews('published')"><span class="label"><i class="fas fa-check"></i>Publicar</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
+              <button class="btn btn-o" id="btn-news-draft" onclick="saveNews('draft')"><span class="label"><i class="fas fa-clock"></i>Salvar Rascunho</span><span class="spin"><i class="fas fa-circle-notch"></i></span></button>
             </div>
           </div>
         </div>
@@ -2502,8 +2505,13 @@ async function editNews(id) {
   document.getElementById('n-titulo').value = titulo;
   document.getElementById('n-resumo').value = resumo;
   document.getElementById('n-autor').value  = autor;
-  document.getElementById('n-img').value    = img.startsWith('[') ? '' : img;
-  if (img && !img.startsWith('[')) previewNewsImg(img);
+  const imgVal = img && !img.startsWith('[') ? img : '';
+  document.getElementById('n-img').value = imgVal;
+  if (imgVal) {
+    setTimeout(() => previewNewsImg(imgVal), 200);
+  } else {
+    previewNewsImg('');
+  }
 
   // Seleciona categoria
   const catSel = document.getElementById('n-cat');
@@ -3087,8 +3095,16 @@ function switchImgTab(tab) {
 function previewNewsImg(url) {
   const prev = document.getElementById('n-img-preview');
   const img  = document.getElementById('n-img-preview-img');
-  if (url) { img.src = url; prev.style.display = ''; img.onerror = () => { prev.style.display='none'; }; }
-  else { prev.style.display = 'none'; }
+  if (!prev || !img) return;
+  if (url && !url.startsWith('[')) {
+    img.src = url;
+    prev.style.display = '';
+    img.onerror = function() { this.parentElement.style.display='none'; };
+    img.onload  = function() { prev.style.display = ''; };
+  } else {
+    prev.style.display = 'none';
+    img.src = '';
+  }
 }
 
 function clearNewsImg() {
