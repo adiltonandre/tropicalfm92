@@ -1186,8 +1186,38 @@ async function rNews(){
   const news=(raw||[]).filter(n=>n.status==='published'||n.titulo||n.title).map(n=>({
     ...n, title:n.title||n.titulo, cat:n.cat||n.categoria,
     exc:n.exc||n.resumo, img:n.img||n.imagem_url, author:n.author||n.autor,
-  }));const g=document.getElementById('newsGrid');if(!news.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txt3)"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';return;}g.innerHTML=news.map(n=>`<div class="ncard" onclick="oNM(${n.id})"><div class="ncard-img">${n.img?`<img src="${n.img}" alt="${n.title}" loading="lazy" onerror="this.parentElement.className='ncard-img-ph'">`:'<div class="ncard-img-ph"><i class="fas fa-newspaper"></i></div>'}<div class="ncard-cat">${n.cat}</div></div><div class="ncard-body"><div class="ncard-title">${n.title}</div><div class="ncard-exc">${n.exc||''}</div><div class="ncard-meta"><span><i class="fas fa-user"></i>${n.author}</span><span><i class="fas fa-clock"></i>${fd(n.date)}</span></div></div></div>`).join('');}
-function oNM(id){const n=(S.get('news')||[]).find(x=>x.id==id);if(!n)return;document.getElementById('nmCat').innerHTML=`<i class="fas fa-tag" style="margin-right:4px"></i>${n.cat}`;document.getElementById('nmTitle').textContent=n.title;document.getElementById('nmMeta').innerHTML=`<i class="fas fa-user" style="color:var(--vermelho);margin-right:4px"></i>${n.author} <span style="margin-left:12px"><i class="fas fa-clock" style="color:var(--vermelho);margin-right:4px"></i>${fd(n.date)}</span>`;document.getElementById('nmText').innerHTML=n.content||n.exc||'';const img=document.getElementById('nmImg');if(n.img){img.src=n.img;img.style.display='';}else img.style.display='none';document.getElementById('nModal').classList.add('open');}
+  }));const g=document.getElementById('newsGrid');
+  if(!news.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--txt3)"><i class="fas fa-newspaper" style="font-size:40px;display:block;margin-bottom:12px;opacity:.3"></i>Nenhuma notícia publicada.</div>';return;}
+  // Destaque — primeira notícia
+  const dest=news[0]; const resto=news.slice(1);
+  const destEl=document.getElementById('newsDestaque');
+  if(destEl){
+    destEl.style.display='';
+    destEl.innerHTML=`<div onclick="oNM(${dest.id})" style="cursor:pointer;border-radius:12px;overflow:hidden;background:var(--card-bg,#1a1a2e);border:1px solid rgba(255,255,255,.08);margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr;min-height:260px">
+      <div style="position:relative;overflow:hidden">
+        ${dest.img?`<img src="${dest.img}" alt="${dest.title}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">`:'<div style="height:100%;min-height:200px;display:flex;align-items:center;justify-content:center;font-size:64px;opacity:.2"><i class="fas fa-newspaper"></i></div>'}
+        <div style="position:absolute;top:12px;left:12px;background:var(--vermelho);color:#fff;font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px">${dest.cat}</div>
+      </div>
+      <div style="padding:24px;display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--vermelho);margin-bottom:8px"><i class="fas fa-star" style="margin-right:4px"></i>Destaque</div>
+        <div style="font-family:var(--fd,inherit);font-size:20px;font-weight:800;line-height:1.3;margin-bottom:10px">${dest.title}</div>
+        <div style="font-size:12px;opacity:.6;line-height:1.6;margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${dest.exc||''}</div>
+        <div style="font-size:11px;opacity:.4;display:flex;gap:12px"><span><i class="fas fa-user" style="margin-right:4px"></i>${dest.author}</span><span><i class="fas fa-clock" style="margin-right:4px"></i>${fd(dest.date)}</span></div>
+      </div></div>`;
+  }
+  g.innerHTML=resto.map(n=>`<div class="ncard" onclick="oNM(${n.id})"><div class="ncard-img">${n.img?`<img src="${n.img}" alt="${n.title}" loading="lazy" onerror="this.parentElement.className='ncard-img-ph'">`:'<div class="ncard-img-ph"><i class="fas fa-newspaper"></i></div>'}<div class="ncard-cat">${n.cat}</div></div><div class="ncard-body"><div class="ncard-title">${n.title}</div><div class="ncard-exc">${n.exc||''}</div><div class="ncard-meta"><span><i class="fas fa-user"></i>${n.author}</span><span><i class="fas fa-clock"></i>${fd(n.date)}</span></div></div></div>`).join('');}
+async function oNM(id){
+  let n=(S.get('news')||[]).find(x=>x.id==id);
+  if(!n&&_API_BASE){try{const r=await fetch(_API_BASE+'/noticias/'+id);const j=await r.json();if(j.success&&j.data){const d=j.data;n={id:d.id,title:d.titulo,cat:d.categoria||'Geral',exc:d.resumo,content:d.conteudo,img:d.imagem_url,author:d.autor||'Redação',date:d.publicado_em||d.criado_em};}}catch(e){}}
+  if(!n)return;
+  document.getElementById('nmCat').innerHTML=`<i class="fas fa-tag" style="margin-right:4px"></i>${n.cat||n.categoria||'Geral'}`;
+  document.getElementById('nmTitle').textContent=n.title||n.titulo;
+  document.getElementById('nmMeta').innerHTML=`<i class="fas fa-user" style="color:var(--vermelho);margin-right:4px"></i>${n.author||n.autor||'Redação'} <span style="margin-left:12px"><i class="fas fa-clock" style="color:var(--vermelho);margin-right:4px"></i>${fd(n.date)}</span>`;
+  document.getElementById('nmText').innerHTML=n.content||n.conteudo||n.exc||'';
+  const img=document.getElementById('nmImg');const imgUrl=n.img||n.imagem_url||'';
+  if(imgUrl){img.src=imgUrl;img.style.display='';}else img.style.display='none';
+  document.getElementById('nModal').classList.add('open');
+}
 function closeNM(e){if(e.target.id==='nModal')cNM();}function cNM(){document.getElementById('nModal').classList.remove('open');}
 
 async function rProg(){
