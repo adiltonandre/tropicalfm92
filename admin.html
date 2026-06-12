@@ -648,7 +648,7 @@ textarea.fi{resize:vertical;min-height:80px;line-height:1.6}
           <div class="sb-group-label">Conteúdo</div>
           <div class="sb-item" onclick="goto('player',this)"><i class="fas fa-headphones"></i>Player / Stream</div>
           <div class="sb-item" onclick="goto('carousel',this)"><i class="fas fa-images"></i>Carousel / Banners</div>
-          <div class="sb-item" onclick="goto('noticias',this);setTimeout(()=>swTab('news','new',document.getElementById('tab-news-new')),50)"><i class="fas fa-newspaper"></i>Notícias</div>
+          <div class="sb-item" onclick="goto('noticias',this)"><i class="fas fa-newspaper"></i>Notícias</div>
           <div class="sb-item" onclick="goto('programacao',this)"><i class="fas fa-th-list"></i>Programação</div>
           <div class="sb-item" onclick="goto('podcast',this)"><i class="fas fa-video"></i>Frente a Frente</div>
           <div class="sb-item" onclick="goto('top',this)"><i class="fas fa-music"></i>Top Músicas</div>
@@ -2453,26 +2453,40 @@ async function delNews(id) {
   toast('success', 'Notícia removida', API_TOKEN ? '✅ Removida do banco' : '💾 Removida localmente');
 }
 async function swTab(panel, tab, btn) {
-  // Garante que o painel pai está visível primeiro
-  const p = document.getElementById('p-' + panel);
-  if (!p) return;
-  // Se painel não estiver ativo, ativa ele
-  if (!p.classList.contains('on')) {
-    const sbItem = document.querySelector(`.sb-item[onclick*="'${panel}'"]`);
-    goto(panel, sbItem);
-    await new Promise(r => setTimeout(r, 80));
+  // Busca todos os elementos tab-pane e tab-btn do painel
+  // usando IDs explícitos para evitar problema de seleção
+  const knownPanes = {
+    'news': ['news-tp-new', 'news-tp-list']
+  };
+  const paneIds = knownPanes[panel] || [];
+  
+  if (paneIds.length) {
+    // Oculta todas as abas conhecidas
+    paneIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('on');
+    });
+    // Oculta todos os botões de aba do painel
+    const p = document.getElementById('p-' + panel);
+    if (p) p.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('on'));
   }
-  p.querySelectorAll('.tab-pane').forEach(x => x.classList.remove('on'));
-  p.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('on'));
+  
+  // Mostra a aba selecionada
   const pane = document.getElementById(panel + '-tp-' + tab);
-  if (pane) pane.classList.add('on');
-  if (btn) btn.classList.add('on');
-  if (tab === 'list') {
-    await renderNewsList('');
-    setTimeout(initQuill, 100);
+  if (pane) {
+    pane.classList.add('on');
   } else {
-    setTimeout(initQuill, 100);
+    console.error('Pane não encontrado:', panel + '-tp-' + tab);
+    return;
   }
+  if (btn) btn.classList.add('on');
+
+  // Ações pós-troca
+  if (panel === 'news' && tab === 'list') {
+    const filter = document.getElementById('newsFilter');
+    await renderNewsList(filter ? filter.value : '');
+  }
+  if (panel === 'news') setTimeout(initQuill, 150);
 }
 
 // ─── PROGRAMAÇÃO ──────────────────────────────────────
