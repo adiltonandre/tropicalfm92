@@ -2363,36 +2363,92 @@ async function saveNews(status) {
   if (quillEditor) quillEditor.setContents([]);
   renderNewsList(); dSt(); clearUnsaved();
 }
-function renderNewsList(filter = '') {
-  const news = (S.get('news') || []).filter(n => !filter || n.title.toLowerCase().includes(filter.toLowerCase()));
-  document.getElementById('newsCount').textContent = `${news.length} notícia(s)`;
-  document.getElementById('newsTbody').innerHTML = news.map(n => `
+async function renderNewsList(filter = '') {
+  const tbody = document.getElementById('newsTbody');
+  const count = document.getElementById('newsCount');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t4)"><i class="fas fa-circle-notch fa-spin"></i> Carregando...</td></tr>';
+
+  let news = [];
+
+  // Busca da API se disponível
+  if (API_BASE && await ensureToken()) {
+    try {
+      const qs = filter ? `&q=${encodeURIComponent(filter)}` : '';
+      const res = await Api.get(`/noticias?status=all&limit=100${qs}`);
+      if (res.success && res.data?.items) {
+        // Normaliza campos API → formato interno
+        news = res.data.items.map(n => ({
+          id:     n.id,
+          title:  n.titulo || n.title,
+          cat:    n.categoria || n.cat || 'Geral',
+          status: n.status,
+          date:   n.publicado_em || n.criado_em || n.date,
+          autor:  n.autor,
+        }));
+      }
+    } catch(e) { console.warn('API list error:', e); }
+  }
+
+  // Fallback localStorage
+  if (!news.length) {
+    news = (S.get('news') || []).filter(n =>
+      !filter || (n.title||n.titulo||'').toLowerCase().includes(filter.toLowerCase())
+    ).map(n => ({
+      id:     n.id,
+      title:  n.title || n.titulo,
+      cat:    n.cat   || n.categoria || 'Geral',
+      status: n.status,
+      date:   n.date  || n.criado_em,
+      autor:  n.autor || n.author,
+    }));
+  }
+
+  count.textContent = `${news.length} notícia(s)${API_TOKEN ? ' (banco)' : ' (local)'}`;
+
+  tbody.innerHTML = news.map(n => `
     <tr>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.title}</td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--t1)">${n.title||'(sem título)'}</td>
       <td><span class="badge badge-p">${n.cat}</span></td>
-      <td><span class="badge ${n.status === 'published' ? 'badge-g' : 'badge-a'}">${n.status === 'published' ? 'Publicado' : 'Rascunho'}</span></td>
-      <td>${fmtDate(n.date)}</td>
+      <td><span class="badge ${n.status==='published'?'badge-g':'badge-a'}">${n.status==='published'?'Publicado':'Rascunho'}</span></td>
+      <td style="white-space:nowrap">${fmtDate(n.date)}</td>
       <td>
         <div class="act-btns">
-          ${n.status === 'draft' ? `<button class="btn btn-g btn-sm" onclick="pubNews(${n.id})"><i class="fas fa-check"></i></button>` : ''}
-          <button class="btn btn-r btn-sm" onclick="confirmAction('Deletar notícia?','Esta notícia será removida permanentemente.','danger',()=>delNews(${n.id}))"><i class="fas fa-trash"></i></button>
+          ${n.status==='draft'?`<button class="btn btn-g btn-sm" title="Publicar" onclick="pubNews(${n.id})"><i class="fas fa-check"></i></button>`:''}
+          <button class="btn btn-r btn-sm" title="Deletar" onclick="confirmAction('Deletar notícia?','Será removida permanentemente.','danger',()=>delNews(${n.id}))"><i class="fas fa-trash"></i></button>
         </div>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t4);padding:20px">Nenhuma notícia</td></tr>';
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t4);padding:20px">Nenhuma notícia cadastrada</td></tr>';
 }
+
 function filterNews(v) { renderNewsList(v); }
-function pubNews(id) {
-  const news = S.get('news') || []; const n = news.find(x => x.id === id);
-  if (n) { n.status = 'published'; S.set('news', news); renderNewsList(); toast('success','Notícia publicada!',''); }
+
+async function pubNews(id) {
+  if (API_BASE && await ensureToken()) {
+    try {
+      // Busca título atual para não zerar no UPDATE
+      const r = await Api.get('/noticias/' + id);
+      const titulo = r.data?.titulo || r.data?.title || 'Sem título';
+      await Api.put('/noticias/' + id, { titulo, status: 'published' });
+    } catch(e) { console.warn('pubNews API:', e); }
+  }
+  const news = S.get('news') || [];
+  const n = news.find(x => x.id == id);
+  if (n) { n.status = 'published'; S.set('news', news); }
+  renderNewsList();
+  toast('success', 'Notícia publicada!', API_TOKEN ? '✅ Banco atualizado' : '💾 Local');
 }
+
 async function delNews(id) {
-  S.set('news', (S.get('news') || []).filter(n => n.id !== id));
-  renderNewsList(); dSt();
-  if (API_BASE && API_TOKEN) {
+  if (!confirm) return;
+  // Remove local
+  S.set('news', (S.get('news') || []).filter(n => n.id != id));
+  // Remove API
+  if (API_BASE && await ensureToken()) {
     try { await Api.del('/noticias/' + id); } catch(e) {}
   }
-  toast('success','Notícia removida','');
+  renderNewsList(); dSt();
+  toast('success', 'Notícia removida', API_TOKEN ? '✅ Removida do banco' : '💾 Removida localmente');
 }
 function swTab(panel, tab, btn) {
   const p = document.getElementById('p-' + panel);
@@ -2402,7 +2458,7 @@ function swTab(panel, tab, btn) {
   const pane = document.getElementById(panel + '-tp-' + tab);
   if (pane) pane.classList.add('on');
   if (btn) btn.classList.add('on');
-  if (tab === 'list') { renderNewsList(); setTimeout(initQuill, 100); }
+  if (tab === 'list') { renderNewsList(''); setTimeout(initQuill, 100); }
   else setTimeout(initQuill, 100);
 }
 
