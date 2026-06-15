@@ -1,20 +1,30 @@
 <?php
 // ══════════════════════════════════════════════
 //  TROPICAL FM — CONFIG BANCO DE DADOS
-//  Edite apenas este arquivo na hospedagem
+//  ⚠️ EDITE APENAS ESTE ARQUIVO NA HOSPEDAGEM
 // ══════════════════════════════════════════════
-define('DB_HOST',     getenv('DB_HOST')     ?: 'localhost');
-define('DB_NAME',     getenv('DB_NAME')     ?: 'tropicalfm');
-define('DB_USER',     getenv('DB_USER')     ?: 'root');
-define('DB_PASS',     getenv('DB_PASS')     ?: '');
-define('DB_CHARSET',  'utf8mb4');
-define('JWT_SECRET',  getenv('JWT_SECRET')  ?: 'troca_esta_chave_em_producao_2025');
-define('ADMIN_PIN',   getenv('ADMIN_PIN')   ?: '1234');
+
+// ── Dados do banco — altere na hospedagem ────
+define('DB_HOST',    getenv('DB_HOST')    ?: 'localhost');
+define('DB_NAME',    getenv('DB_NAME')    ?: 'tropicalfm');
+define('DB_USER',    getenv('DB_USER')    ?: 'root');
+define('DB_PASS',    getenv('DB_PASS')    ?: '');
+define('DB_CHARSET', 'utf8mb4');
+
+// ── Segurança — TROQUE em produção! ──────────
+define('JWT_SECRET', getenv('JWT_SECRET') ?: 'TropicalFM_2025_SecretKey_X9z#mK');
 define('APP_VERSION', '1.0.0');
+
+// ── CORS — aceita qualquer origem em dev ─────
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
+header("Access-Control-Allow-Origin: $origin");
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 
 class DB {
     private static ?PDO $conn = null;
-
     public static function get(): PDO {
         if (self::$conn === null) {
             try {
@@ -25,7 +35,10 @@ class DB {
                     PDO::ATTR_EMULATE_PREPARES   => false,
                 ]);
             } catch (PDOException $e) {
-                Response::error('database_unavailable', 'Não foi possível conectar ao banco de dados.', 503);
+                http_response_code(503);
+                header('Content-Type: application/json');
+                echo json_encode(['success'=>false,'error'=>'db_error','message'=>'Banco indisponível']);
+                exit;
             }
         }
         return self::$conn;
